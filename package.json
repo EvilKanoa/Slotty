@@ -10,17 +10,18 @@
   "scripts": {
     "start": "NODE_ENV=development nodemon backend/index.js",
     "prod": "NODE_ENV=production nodemon backend/index.js",
-    "lint": "prettier --write backend/**/*.js"
+    "lint": "prettier --write *.js"
   },
   "prettier": {
-    "tabWidth": 4,
+    "tabWidth": 2,
     "singleQuote": true,
     "trailingComma": "es5"
   },
   "dependencies": {
     "body-parser": "^1.19.0",
     "express": "^4.17.1",
-    "nodemon": "^2.0.2"
+    "nodemon": "^2.0.2",
+    "sqlite3": "^4.1.1"
   },
   "devDependencies": {
     "prettier": "^1.19.1"
