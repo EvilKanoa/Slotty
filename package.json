@@ -10,7 +10,7 @@
   "scripts": {
     "start": "NODE_ENV=development nodemon backend/index.js",
     "prod": "NODE_ENV=production nodemon backend/index.js",
-    "lint": "prettier --write *.js"
+    "lint": "prettier --write **/*.js"
   },
   "prettier": {
     "tabWidth": 2,

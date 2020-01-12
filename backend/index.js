@@ -38,6 +38,14 @@ process.on('SIGINT', () => process.exit(2));
     Slotty is now running on port ${port}!
     `)
   );
+
+  console.log('Creating a new notification...');
+  const data = await db.createNotification({
+    institutionKey: 'UOG',
+    courseKey: 'CIS*1500',
+    termKey: 'F19',
+  });
+  console.log(data);
 })().catch(err => {
   console.error('Encountered a fatel error during setup', err);
 });
