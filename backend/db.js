@@ -6,65 +6,53 @@ const sqlite3 = config.isDev
   : require('sqlite3');
 
 /**
- * Utility function to wrap db.xxx(...) calls in a promise.
- * @param {sqlite3.Database} db The database to perform the run operation upon.
- * @param {String} funcName The name of the db function to run in async (e.g. 'run', 'get').
- * @param {String} sql The SQL query to be ran.
- * @param {Array<any>|undefined} params The params to insert into the SQL query.
- * @returns {Promise<Error|undefined>} Resolves with data if func succeeds or rejects with db error.
+ * Tagged template for constructing SQL statements that will be used with sqlite3.
+ * @example
+ * // insert a value into a table
+ * db.run(...sql`INSERT INTO table VALUES (${'My first value'}, ${4})`);
+ * @param {Array<String>} literals The literals of the SQL statement.
+ * @param {...any} values The values that must be inserted into the string.
+ * @returns {[String, Array<any>]} Arguments that can be spread into the sqlite3 db functions.
  */
-const dbAsync = (db, funcName, sql, params = []) =>
-  new Promise((resolve, reject) => {
-    if (!db[funcName] || typeof db[funcName] !== 'function') {
-      return Promise.reject('Unknown db funcName supplied');
-    }
-
-    db[funcName](sql, params, (err, res) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(res);
-      }
-    });
-  });
+const sql = (literals, ...values) => [literals.join('?'), values];
 
 /**
- * Utility function to wrap db.run(...) calls in a promise.
- * @param {sqlite3.Database} db The database to perform the run operation upon.
- * @param {String} sql The SQL query to be ran.
- * @param {Array<any>|undefined} params The params to insert into the SQL query.
- * @returns {Promise<Error|undefined>} Resolves if run succeeds or rejects with db error.
+ * Takes a created sqlite3 Database and binds async versions of db functions.
+ * Bound functions include run and get.
+ * @param {sqlite3.Database} db The database to bind async alternatives onto.
+ * @returns {sqlite3.Database} The passed database with the async methods bound onto it.
  */
-const runAsync = (db, sql, params = []) => dbAsync(db, 'run', sql, params);
+const bindAsync = db => {
+  // the following functions can all be found in the same fashion
+  ['run', 'get', 'all'].forEach(fn => {
+    db[`${fn}Async`] = (...args) => {
+      // allow tagged sql strings to be passed without spread
+      const dbArgs = args.length === 1 ? args[0] : args;
 
-/**
- * Utility function to wrap db.serialize(...) calls in a promise. Use with runAsync(...).
- * @param {sqlite3.Database} db The database to perform the serialization upon.
- * @param {async function} cmds Function that runs async commands upon the database.
- */
-const serializeAsync = (db, cmds) =>
-  new Promise((resolve, reject) => {
-    db.serialize(() => {
-      cmds()
-        .then(() => resolve())
-        .catch(reject);
-    });
+      // wrap the original call within a new promise
+      return new Promise((resolve, reject) =>
+        db[fn](...dbArgs, (err, res) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(res);
+          }
+        })
+      );
+    };
   });
 
-/**
- * Utility function to wrap db.parallelize(...) calls in a promise. Use with runAsync(...).
- * @param {sqlite3.Database} db The database to perform the parallelization upon.
- * @param {async function} cmds Function that runs async commands upon the database.
- */
-const paralellizeAsync = (db, cmds) =>
-  new Promise((resolve, reject) => {
-    db.paralellize(() => {
-      cmds()
-        .then(() => resolve())
-        .catch(reject);
-    });
-  });
+  // add indicator that the db object has bound functions added
+  db.asyncBound = true;
 
+  // return the bound db (since this method mutates the object, this may not be used)
+  return db;
+};
+
+/**
+ * Singleton class for working with a backing database.
+ * @class
+ */
 class DB {
   /**
    * Create a new database abstraction object for a given database.
@@ -86,46 +74,38 @@ class DB {
       );
     }
 
-    // create required tables in database
-    return serializeAsync(this.db, async () => {
-      // create the notications table
-      await runAsync(
-        this.db,
-        `
-        CREATE TABLE IF NOT EXISTS notifications (
-          notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
-          access_key TEXT NOT NULL UNIQUE,
-          institution_key TEXT NOT NULL,
-          course_key TEXT NOT NULL,
-          term_key TEXT NOT NULL,
-          enabled BOOLEAN NOT NULL CHECK (enabled IN (0,1)),
-          interval INTEGER NOT NULL DEFAULT 15,
-          repeat INTEGER NOT NULL DEFAULT 3
-        )
-        `
-      );
+    // create the notifications table
+    await this.db.runAsync(sql`
+      CREATE TABLE IF NOT EXISTS notifications (
+        notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        access_key TEXT NOT NULL UNIQUE,
+        institution_key TEXT NOT NULL,
+        course_key TEXT NOT NULL,
+        term_key TEXT NOT NULL,
+        enabled BOOLEAN NOT NULL CHECK (enabled IN (0,1)) DEFAULT 1,
+        interval INTEGER NOT NULL DEFAULT 15,
+        repeat INTEGER NOT NULL DEFAULT 3
+      )
+    `);
 
-      // create the run history table
-      await runAsync(
-        this.db,
-        `
-        CREATE TABLE IF NOT EXISTS runs (
-          run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-          notification_id INTEGER NOT NULL,
-          error TEXT,
-          timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (notification_id)
-            REFERENCES notifications (notification_id)
-              ON DELETE CASCADE
-              ON UPDATE NO ACTION
-        )
-        `
-      );
-    });
+    // create the run history table
+    await this.db.runAsync(sql`
+      CREATE TABLE IF NOT EXISTS runs (
+        run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_id INTEGER NOT NULL,
+        error TEXT,
+        timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (notification_id)
+          REFERENCES notifications (notification_id)
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION
+      )
+    `);
   }
 
   /**
    * True when a DB connection has been established.
+   * @returns {Boolean} Whether the database has been opened.
    */
   get isOpen() {
     return this.db && this.db.open;
@@ -138,7 +118,7 @@ class DB {
   async open() {
     // if DB already opened, resolve and return early
     if (this.isOpen) {
-      return Promise.resolve(this);
+      return this;
     }
 
     // create a new promise to wrap the sqlite3 open functions
@@ -155,6 +135,10 @@ class DB {
             );
             reject(err);
           } else {
+            // add async functions to the db object
+            bindAsync(this.db);
+
+            // initialize our database
             this.initialize()
               .then(() => {
                 console.log(
@@ -171,12 +155,12 @@ class DB {
 
   /**
    * Attempts to close the database associated with this DB object.
-   * @returns Promise that rejects with DB error or resolves on close.
+   * @returns {Promise<undefined>} Promise that rejects with DB error or resolves on close.
    */
   async close() {
     // if DB not opened, resolve and return early
     if (!this.isOpen) {
-      return Promise.resolve();
+      return;
     }
 
     // create a new promise to wrap the sqlite3 close functions
@@ -208,15 +192,17 @@ class DB {
    * @param {Boolean} notification.enabled
    * @param {Number} notification.interval
    * @param {Number} notification.repeat
-   * @returns {Object} The created notification entry.
+   * @returns {Promise<Object>} The created notification entry.
    */
-  async createNotification(notification) {
-    if (
-      !notification ||
-      !notification.institutionKey ||
-      !notification.courseKey ||
-      !notification.termKey
-    ) {
+  async createNotification({
+    institutionKey,
+    courseKey,
+    termKey,
+    enabled = true,
+    interval = 15,
+    repeat = 3,
+  } = {}) {
+    if (!institutionKey || !courseKey || !termKey) {
       throw new Error(
         'Notification must have keys for institution, course, and term'
       );
@@ -227,31 +213,16 @@ class DB {
     let result = undefined;
     do {
       accessKey = utils.generateAccessKey();
-      result = await dbAsync(
-        this.db,
-        'get',
-        'SELECT notification_id id FROM notifications WHERE access_key = ?',
-        [accessKey]
-      );
+      result = await this.db.getAsync(sql`
+        SELECT notification_id id FROM notifications WHERE access_key = ${accessKey}
+      `);
     } while (result !== undefined);
 
     // create the new notification
-    await runAsync(
-      this.db,
-      `
+    await this.db.runAsync(sql`
       INSERT INTO notifications(access_key, institution_key, course_key, term_key, enabled, interval, repeat)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        accessKey,
-        notification.institutionKey,
-        notification.courseKey,
-        notification.termKey,
-        notification.enabled === undefined || notification.enabled,
-        notification.interval || 15,
-        notification.repeat || 3,
-      ]
-    );
+      VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${termKey}, ${enabled}, ${interval}, ${repeat})
+    `);
 
     // load notification from db for return
     const data = await this.getNotification({ accessKey });
@@ -282,19 +253,13 @@ class DB {
     // use the correct query to find a matching notification
     let data;
     if (idOrAccessKey.id) {
-      data = await dbAsync(
-        this.db,
-        'get',
-        'SELECT * FROM notifications WHERE notification_id = ?',
-        [idOrAccessKey.id]
-      );
+      data = await this.db.getAsync(sql`
+        SELECT * FROM notifications WHERE notification_id = ${idOrAccessKey.id}
+      `);
     } else {
-      data = await dbAsync(
-        this.db,
-        'get',
-        'SELECT * FROM notifications WHERE access_key = ?',
-        [idOrAccessKey.accessKey]
-      );
+      data = await this.db.getAsync(sql`
+        SELECT * FROM notifications WHERE access_key = ${idOrAccessKey.accessKey}
+      `);
     }
 
     // if notification not found, return undefined

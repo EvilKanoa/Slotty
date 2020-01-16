@@ -45,7 +45,7 @@ process.on('SIGINT', () => process.exit(2));
     courseKey: 'CIS*1500',
     termKey: 'F19',
   });
-  console.log(data);
+  console.log(await db.getNotification({ accessKey: data.accessKey }));
 })().catch(err => {
   console.error('Encountered a fatel error during setup', err);
 });
