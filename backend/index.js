@@ -39,22 +39,31 @@ process.on('SIGINT', () => process.exit(2));
     `)
   );
 
-  console.log('Creating a new notification...');
-  const data = await db.createNotification({
+  // dev testing code below
+  console.log('Creating a new notification and a bunch of runs...');
+  const { id: notificationId } = await db.createNotification({
     institutionKey: 'UOG',
     courseKey: 'CIS*1500',
     termKey: 'F19',
     contact: 'kanoa@kanoa.ca',
   });
-  console.log(data);
-  const run = await db.createRun({
-    notificationId: data.id,
-    courseOpen: false,
-    notificationSent: false,
-  });
-  console.log(run);
-  console.log(await db.getRun(run.id));
-  console.log(await db.getNotification({ accessKey: data.accessKey }));
+  const notification = await db.getNotification({ id: notificationId });
+  console.log(notification);
+  let runCount = 0;
+  for (let day = 0; day < 100; day++) {
+    if (
+      await db.createRun({
+        notificationId,
+        courseOpen: false,
+        notificationSent: true,
+        timestamp: new Date(`12/12/19${day}`),
+      })
+    ) {
+      runCount++;
+    }
+  }
+  console.log('Run count: ' + runCount);
+  console.log(await db.getRuns({ accessKey: notification.accessKey }, 3));
 })().catch(err => {
   console.error('Encountered a fatel error during setup', err);
 });

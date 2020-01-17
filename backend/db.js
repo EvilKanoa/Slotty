@@ -25,7 +25,8 @@ const sqlite3 = config.isDev
  * @property {String} error If any error occurred during this run, this field is populated with it.
  * @property {Date} timestamp When the run was executed.
  * @property {Boolean} courseOpen Whether the course in question had open slots at the time of running.
- * @property {Boolean} notificationSent Whether a notification was sent as a result of this run.
+ * @property {Boolean} notificationSent Whether a notification was sent as a result of this run or previous runs with the same slots.
+ *                                      This should be set to false when the course is closed up again.
  */
 
 /**
@@ -33,17 +34,40 @@ const sqlite3 = config.isDev
  * @example
  * // insert a value into a table
  * db.run(...sql`INSERT INTO table VALUES (${'My first value'}, ${4})`);
+ * @example
+ * // dynamically append to a query
+ * let query = sql`SELECT * FROM items WHERE color = ${color}`;
+ * if (limit) {
+ *   query = query.append`LIMIT ${limit}`;
+ * }
+ * db.get(...query);
  * @param {Array<String>} literals The literals of the SQL statement.
  * @param {...any} values The values that must be inserted into the string.
  * @returns {[String, Array<any>]} Arguments that can be spread into the sqlite3 db functions.
  */
-const sql = (literals, ...values) => [
-  literals
-    .join('?')
-    .replace(/\s+/g, ' ')
-    .trim(),
-  values,
-];
+const sql = (literals, ...values) => {
+  // transform into data that is usable by sqlite3
+  const stmt = [
+    literals
+      .join('?')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    values,
+  ];
+
+  // add a utility method that allows appending multiple sql strings
+  stmt.append = (literals, ...values) => {
+    // prefix the first literal with our original query
+    const mergedLiterals = [`${stmt[0]} ${literals[0]}`, ...literals.slice(1)];
+    // merge both list of values together
+    const mergedValues = [...stmt[1], ...values];
+
+    // return the newly built query/statement
+    return sql(mergedLiterals, ...mergedValues);
+  };
+
+  return stmt;
+};
 
 /**
  * Takes a created sqlite3 Database and binds async versions of db functions.
@@ -286,6 +310,18 @@ class DB {
   }
 
   /**
+   * Updates the notification in the database to match the data contained within the passed notification object.
+   * Any unset fields will not be changed.
+   *
+   * Note 1: There must exist some notification in the database with a matching ID.
+   *
+   * Note 2: You cannot change / update the access key of a notification.
+   * @param {Notification} notification The new data for the notification with notification.id used as a query.
+   * @returns {Promise<Notification>} Resolves with undefined if no matching notification exists.
+   */
+  async updateNotification(notification) {}
+
+  /**
    * Gets the notification matching the ID or access key specified.
    * @param {Object} idOrAccessKey Object containing the query data.
    * @param {Number} idOrAccessKey.id Set this value to search by ID (default if both values filled).
@@ -303,16 +339,13 @@ class DB {
     }
 
     // use the correct query to find a matching notification
-    let data;
+    let query = sql`SELECT * FROM notifications`;
     if (idOrAccessKey.id !== undefined) {
-      data = await this.db.getAsync(sql`
-        SELECT * FROM notifications WHERE notification_id = ${idOrAccessKey.id} LIMIT 1
-      `);
+      query = query.append`WHERE notification_id = ${idOrAccessKey.id}`;
     } else {
-      data = await this.db.getAsync(sql`
-        SELECT * FROM notifications WHERE access_key = ${idOrAccessKey.accessKey} LIMIT 1
-      `);
+      query = query.append`WHERE access_key = ${idOrAccessKey.accessKey}`;
     }
+    const data = await this.db.getAsync(query.append`LIMIT 1`);
 
     // if notification not found, return undefined
     if (!data) {
@@ -410,6 +443,54 @@ class DB {
         notificationSent: !!data.notification_sent,
       };
     }
+  }
+
+  /**
+   * Gets runs for a given notification that may be specified by notification ID or access key.
+   * You may limit the number of runs returned by passing a value above -1 to limit.
+   * When limit = -1, all matching runs will be returned (could cause an OOM error).
+   * Runs will always be filtered by descending timestamp (most recent runs come first).
+   * @param {Object} idOrAccessKey Object containing the notification query data.
+   * @param {Number} idOrAccessKey.id Set this value to search by ID (default if both values filled).
+   * @param {String} idOrAccessKey.accessKey Set this value to search by access key.
+   * @param {Number} [limit=1] Limit the number of runs returned. Set to -1 for no limit. Defaults to a limit of 1.
+   * @returns {Promise<Array<NotificationRun>>} Array of runs found. Sorted with most recent run first.
+   */
+  async getRuns(idOrAccessKey, limit = 1) {
+    if (
+      !idOrAccessKey ||
+      (idOrAccessKey.id === undefined && !idOrAccessKey.accessKey)
+    ) {
+      throw new Error(
+        'Either the notification ID or access key must be specified'
+      );
+    }
+
+    // start building the query
+    let query = sql`SELECT * FROM runs`;
+
+    // either directly query with notification ID or perform a subquery to find the correct notification ID.
+    if (idOrAccessKey.id !== undefined) {
+      query = query.append`WHERE notification_id = ${idOrAccessKey.id}`;
+    } else {
+      query = query.append`
+        WHERE notification_id = (
+          SELECT notification_id FROM notifications WHERE access_key = ${idOrAccessKey.accessKey} LIMIT 1
+        )
+      `;
+    }
+
+    // apply the correct sorting
+    query = query.append`ORDER BY timestamp DESC`;
+
+    // apply the limit if required
+    if (limit >= 0) {
+      query = query.append`LIMIT ${limit}`;
+    }
+
+    // execute and return the query
+    console.log(query);
+    return (await this.db.allAsync(query)) || [];
   }
 }
 
