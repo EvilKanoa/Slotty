@@ -44,7 +44,16 @@ process.on('SIGINT', () => process.exit(2));
     institutionKey: 'UOG',
     courseKey: 'CIS*1500',
     termKey: 'F19',
+    contact: 'kanoa@kanoa.ca',
   });
+  console.log(data);
+  const run = await db.createRun({
+    notificationId: data.id,
+    courseOpen: false,
+    notificationSent: false,
+  });
+  console.log(run);
+  console.log(await db.getRun(run.id));
   console.log(await db.getNotification({ accessKey: data.accessKey }));
 })().catch(err => {
   console.error('Encountered a fatel error during setup', err);

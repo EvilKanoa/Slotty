@@ -6,6 +6,29 @@ const sqlite3 = config.isDev
   : require('sqlite3');
 
 /**
+ * Notification entry that maps to the structure of notifications in the database.
+ * @typedef {Object} Notification
+ * @property {Number} id The internal identifier of this notification. Use to reference runs of this notification.
+ * @property {String} institutionKey The key used to determine which institution the course is at, should match the key used on webadvisor-api.
+ * @property {String} courseKey The course code that this notification is based upon, should include the section (e.g. CIS*1500*011).
+ * @property {String} termKey The key used to determine which term the course occurs within (e.g. F19, W22, ect).
+ * @property {String} contact The contact method used to send the notification.
+ * @property {Boolean} enabled Whether this notification is currently enabled.
+ */
+
+/**
+ * An individual run of some notification. Includes whether it should be ran again and other important info.
+ * Each notification may have none, one, or many runs.
+ * @typedef {Object} NotificationRun
+ * @property {Number} id The internal identifier of this run.
+ * @property {Number} notificationId The internal identifier of the notification that triggered this run.
+ * @property {String} error If any error occurred during this run, this field is populated with it.
+ * @property {Date} timestamp When the run was executed.
+ * @property {Boolean} courseOpen Whether the course in question had open slots at the time of running.
+ * @property {Boolean} notificationSent Whether a notification was sent as a result of this run.
+ */
+
+/**
  * Tagged template for constructing SQL statements that will be used with sqlite3.
  * @example
  * // insert a value into a table
@@ -14,7 +37,13 @@ const sqlite3 = config.isDev
  * @param {...any} values The values that must be inserted into the string.
  * @returns {[String, Array<any>]} Arguments that can be spread into the sqlite3 db functions.
  */
-const sql = (literals, ...values) => [literals.join('?'), values];
+const sql = (literals, ...values) => [
+  literals
+    .join('?')
+    .replace(/\s+/g, ' ')
+    .trim(),
+  values,
+];
 
 /**
  * Takes a created sqlite3 Database and binds async versions of db functions.
@@ -24,7 +53,7 @@ const sql = (literals, ...values) => [literals.join('?'), values];
  */
 const bindAsync = db => {
   // the following functions can all be found in the same fashion
-  ['run', 'get', 'all'].forEach(fn => {
+  ['get', 'all'].forEach(fn => {
     db[`${fn}Async`] = (...args) => {
       // allow tagged sql strings to be passed without spread
       const dbArgs = args.length === 1 ? args[0] : args;
@@ -41,6 +70,24 @@ const bindAsync = db => {
       );
     };
   });
+
+  // need to add async run separately since it returns data through `this`
+  db.runAsync = (...args) => {
+    // allow tagged sql strings to be passed without spread
+    const dbArgs = args.length === 1 ? args[0] : args;
+
+    // wrap the original call within a new promise
+    return new Promise((resolve, reject) =>
+      // need to use old function syntax so `this` keyword is available
+      db.run(...dbArgs, function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this);
+        }
+      })
+    );
+  };
 
   // add indicator that the db object has bound functions added
   db.asyncBound = true;
@@ -65,6 +112,7 @@ class DB {
 
   /**
    * Creates the schema if needed. Do not call this directly, instead, use db.open() which will call initialize().
+   * @returns {Promise<undefined>} Resolves if initializing succeeds, rejects with any db errors.
    */
   async initialize() {
     // should fail if the db hasn't been opened
@@ -82,9 +130,8 @@ class DB {
         institution_key TEXT NOT NULL,
         course_key TEXT NOT NULL,
         term_key TEXT NOT NULL,
-        enabled BOOLEAN NOT NULL CHECK (enabled IN (0,1)) DEFAULT 1,
-        interval INTEGER NOT NULL DEFAULT 15,
-        repeat INTEGER NOT NULL DEFAULT 3
+        contact TEXT NOT NULL,
+        enabled BOOLEAN NOT NULL CHECK (enabled IN (0,1)) DEFAULT 1
       )
     `);
 
@@ -95,6 +142,8 @@ class DB {
         notification_id INTEGER NOT NULL,
         error TEXT,
         timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        course_open BOOLEAN NOT NULL CHECK (course_open IN (0, 1)),
+        notification_sent BOOLEAN NOT NULL CHECK (notification_sent IN (0, 1)),
         FOREIGN KEY (notification_id)
           REFERENCES notifications (notification_id)
             ON DELETE CASCADE
@@ -113,7 +162,7 @@ class DB {
 
   /**
    * Attempts to open the database associated with this DB object.
-   * @returns Promise that rejects with DB error or resolves with DB instance.
+   * @returns {Promise<DB>} Promise that rejects with DB error or resolves with DB instance.
    */
   async open() {
     // if DB already opened, resolve and return early
@@ -185,26 +234,19 @@ class DB {
 
   /**
    * Creates a new notification entry in the database.
-   * @param {Object} notification New data for the notification.
-   * @param {String} notification.institutionKey
-   * @param {String} notification.courseKey
-   * @param {String} notification.termKey
-   * @param {Boolean} notification.enabled
-   * @param {Number} notification.interval
-   * @param {Number} notification.repeat
-   * @returns {Promise<Object>} The created notification entry.
+   * @param {Notification} notification The notification to insert into the database. Note that you cannot have an ID preset.
+   * @returns {Promise<Notification>} The created notification entry.
    */
   async createNotification({
     institutionKey,
     courseKey,
     termKey,
+    contact,
     enabled = true,
-    interval = 15,
-    repeat = 3,
   } = {}) {
-    if (!institutionKey || !courseKey || !termKey) {
+    if (!institutionKey || !courseKey || !termKey || !contact) {
       throw new Error(
-        'Notification must have keys for institution, course, and term'
+        'Notification must have keys for institution, course, and term as well as a contact method'
       );
     }
 
@@ -219,32 +261,42 @@ class DB {
     } while (result !== undefined);
 
     // create the new notification
-    await this.db.runAsync(sql`
-      INSERT INTO notifications(access_key, institution_key, course_key, term_key, enabled, interval, repeat)
-      VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${termKey}, ${enabled}, ${interval}, ${repeat})
+    const data = await this.db.runAsync(sql`
+      INSERT INTO notifications(access_key, institution_key, course_key, term_key, contact, enabled)
+      VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${termKey}, ${contact}, ${!!enabled})
     `);
 
-    // load notification from db for return
-    const data = await this.getNotification({ accessKey });
-    if (!data) {
+    // return the new notification if it was inserted correctly
+    if (!data || data.changes <= 0) {
       throw new Error(
         'Failed to insert new notification in database with key: ',
         accessKey
       );
     } else {
-      return data;
+      return {
+        id: data.lastID,
+        accessKey,
+        institutionKey,
+        courseKey,
+        termKey,
+        contact,
+        enabled: !!enabled,
+      };
     }
   }
 
   /**
    * Gets the notification matching the ID or access key specified.
    * @param {Object} idOrAccessKey Object containing the query data.
-   * @param {String} idOrAccessKey.id Set this value to search by ID (default if both values filled).
+   * @param {Number} idOrAccessKey.id Set this value to search by ID (default if both values filled).
    * @param {String} idOrAccessKey.accessKey Set this value to search by access key.
-   * @returns {Promise<Object|undefined>} Resolves with undefined if no notification found.
+   * @returns {Promise<Notification|undefined>} Resolves with undefined if no notification found.
    */
   async getNotification(idOrAccessKey) {
-    if (!idOrAccessKey || (!idOrAccessKey.id && !idOrAccessKey.accessKey)) {
+    if (
+      !idOrAccessKey ||
+      (idOrAccessKey.id === undefined && !idOrAccessKey.accessKey)
+    ) {
       throw new Error(
         'Either the notification ID or access key must be specified'
       );
@@ -252,13 +304,13 @@ class DB {
 
     // use the correct query to find a matching notification
     let data;
-    if (idOrAccessKey.id) {
+    if (idOrAccessKey.id !== undefined) {
       data = await this.db.getAsync(sql`
-        SELECT * FROM notifications WHERE notification_id = ${idOrAccessKey.id}
+        SELECT * FROM notifications WHERE notification_id = ${idOrAccessKey.id} LIMIT 1
       `);
     } else {
       data = await this.db.getAsync(sql`
-        SELECT * FROM notifications WHERE access_key = ${idOrAccessKey.accessKey}
+        SELECT * FROM notifications WHERE access_key = ${idOrAccessKey.accessKey} LIMIT 1
       `);
     }
 
@@ -272,9 +324,90 @@ class DB {
         institutionKey: data.institution_key,
         courseKey: data.course_key,
         termKey: data.term_key,
-        enabled: data.enabled,
-        interval: data.interval,
-        repeat: data.repeat,
+        contact: data.contact,
+        enabled: !!data.enabled,
+      };
+    }
+  }
+
+  /**
+   * Creates a new run entry in the database for a given notification.
+   * @param {NotificationRun} run The run to insert into the database. Note that you cannot have an ID preset.
+   * @param {Number} [defaultNotificationId=run.notificationId] If the notification ID is not present in the run object, it must be specified here.
+   * @returns {Promise<NotificationRun>} The created notification entry.
+   */
+  async createRun(
+    {
+      notificationId,
+      error,
+      timestamp = new Date(),
+      courseOpen,
+      notificationSent,
+    } = {},
+    defaultNotificationId
+  ) {
+    let myNotificationId =
+      notificationId === undefined ? defaultNotificationId : notificationId;
+
+    // ensure required fields were specified
+    if (
+      myNotificationId === undefined ||
+      courseOpen === undefined ||
+      notificationSent === undefined
+    ) {
+      throw new Error(
+        'Run must have a notification ID, courseOpen state, and notificationSent state specified'
+      );
+    }
+
+    // create the new run
+    const data = await this.db.runAsync(sql`
+      INSERT INTO runs(notification_id, error, timestamp, course_open, notification_sent)
+      VALUES (${myNotificationId}, ${error}, ${timestamp}, ${!!courseOpen}, ${!!notificationSent})
+    `);
+
+    // return the new run if it was inserted correctly
+    if (!data || data.changes <= 0) {
+      throw new Error('Failed to insert new run in database');
+    } else {
+      return {
+        id: data.lastID,
+        notificationId,
+        error,
+        timestamp,
+        courseOpen: !!courseOpen,
+        notificationSent: !!notificationSent,
+      };
+    }
+  }
+
+  /**
+   * Gets the run entry with a matching ID from the database.
+   * @param {Number} runId The ID of the run entry to get.
+   * @returns {Promise<NotificationRun|undefined} Resolves with undefined if no run found.
+   */
+  async getRun(runId) {
+    // ensure we have an ID to get
+    if (runId === undefined) {
+      throw new Error('Run ID must be specified');
+    }
+
+    // try to find a matching run in the database
+    const data = await this.db.getAsync(sql`
+      SELECT * FROM runs WHERE run_id = ${runId} LIMIT 1
+    `);
+
+    // if run not found, return undefined
+    if (!data) {
+      return undefined;
+    } else {
+      return {
+        id: data.run_id,
+        notificationId: data.notification_id,
+        error: data.error,
+        timestamp: data.timestamp && new Date(data.timestamp),
+        courseOpen: !!data.course_open,
+        notificationSent: !!data.notification_sent,
       };
     }
   }
