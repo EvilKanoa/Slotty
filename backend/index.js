@@ -63,7 +63,6 @@ process.on('SIGINT', () => process.exit(2));
     }
   }
   console.log('Run count: ' + runCount);
-  console.log(await db.getRuns({ accessKey: notification.accessKey }, 3));
 })().catch(err => {
   console.error('Encountered a fatel error during setup', err);
 });

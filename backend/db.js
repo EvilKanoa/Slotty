@@ -9,6 +9,7 @@ const sqlite3 = config.isDev
  * Notification entry that maps to the structure of notifications in the database.
  * @typedef {Object} Notification
  * @property {Number} id The internal identifier of this notification. Use to reference runs of this notification.
+ * @property {String} accessKey The external unique identifier of this notification. Can be used to look up a notification.
  * @property {String} institutionKey The key used to determine which institution the course is at, should match the key used on webadvisor-api.
  * @property {String} courseKey The course code that this notification is based upon, should include the section (e.g. CIS*1500*011).
  * @property {String} termKey The key used to determine which term the course occurs within (e.g. F19, W22, ect).
@@ -34,6 +35,7 @@ const sqlite3 = config.isDev
  * @example
  * // insert a value into a table
  * db.run(...sql`INSERT INTO table VALUES (${'My first value'}, ${4})`);
+ *
  * @example
  * // dynamically append to a query
  * let query = sql`SELECT * FROM items WHERE color = ${color}`;
@@ -41,6 +43,7 @@ const sqlite3 = config.isDev
  *   query = query.append`LIMIT ${limit}`;
  * }
  * db.get(...query);
+ *
  * @param {Array<String>} literals The literals of the SQL statement.
  * @param {...any} values The values that must be inserted into the string.
  * @returns {[String, Array<any>]} Arguments that can be spread into the sqlite3 db functions.
@@ -71,7 +74,21 @@ const sql = (literals, ...values) => {
 
 /**
  * Takes a created sqlite3 Database and binds async versions of db functions.
- * Bound functions include run and get.
+ * Bound functions include run, get, and all.
+ * @example
+ * // bind some database with async db functions
+ * db = bindAsync(db);
+ *
+ * @example
+ * // get a row
+ * const row = await db.getAsync(sql`SELECT * FROM table WHERE column = ${value}`);
+ * // or even
+ * const { id, column, ...row } = await db.getAsync(...);
+ *
+ * @example
+ * // create a new entry
+ * const { lastID, changes } = await db.runAsync(sql`INSERT INTO table VALUES (...)`);
+ *
  * @param {sqlite3.Database} db The database to bind async alternatives onto.
  * @returns {sqlite3.Database} The passed database with the async methods bound onto it.
  */
@@ -313,13 +330,78 @@ class DB {
    * Updates the notification in the database to match the data contained within the passed notification object.
    * Any unset fields will not be changed.
    *
-   * Note 1: There must exist some notification in the database with a matching ID.
+   * Note 1: There must exist some notification in the database with a matching ID or, if no ID present, a matching access key.
    *
    * Note 2: You cannot change / update the access key of a notification.
    * @param {Notification} notification The new data for the notification with notification.id used as a query.
    * @returns {Promise<Notification>} Resolves with undefined if no matching notification exists.
    */
-  async updateNotification(notification) {}
+  async updateNotification(notification) {
+    // define the mapping of notification fields to db columns
+    const fieldMapping = {
+      institutionKey: 'institution_key',
+      courseKey: 'course_key',
+      termKey: 'term_key',
+      contact: 'contact',
+      enabled: 'enabled',
+    };
+
+    // ensure that we have a method to specify the correct notification
+    if (notification.id === undefined && !notification.accessKey) {
+      throw new Error('Notification ID or access key must be specified');
+    }
+
+    // determine which fields are gonna need to be updated
+    const fieldsToSet = Object.keys(fieldMapping).filter(key =>
+      notification.hasOwnProperty(key)
+    );
+
+    // ensure that we have work to do
+    if (fieldsToSet.length === 0) {
+      // if we do not set any fields, we can return early
+      return notification;
+    }
+
+    // start building the update query
+    let query = sql`UPDATE notifications SET`;
+
+    // dynamically build the update statement
+    fieldsToSet.forEach((key, idx, arr) => {
+      // append this set clause with or without a comma
+      if (idx === arr.length - 1) {
+        query = query.append(
+          [`${fieldMapping[key]} = `, ''],
+          notification[key]
+        );
+      } else {
+        query = query.append(
+          [`${fieldMapping[key]} = `, ','],
+          notification[key]
+        );
+      }
+    });
+
+    // add the where clause to specific the exact notification
+    if (notification.id !== undefined) {
+      query = query.append`WHERE notification_id = ${notification.id}`;
+    } else {
+      query = query.append`WHERE access_key = ${notification.accessKey}`;
+    }
+
+    // execute the query
+    console.log(query);
+    const result = this.db.runAsync(query);
+
+    // check if the update succeeded and if so, return the updated notification fields + the id
+    if (!result || result.changes < 1) {
+      return undefined;
+    } else {
+      return {
+        ...notification,
+        notificationId: result.lastID,
+      };
+    }
+  }
 
   /**
    * Gets the notification matching the ID or access key specified.
