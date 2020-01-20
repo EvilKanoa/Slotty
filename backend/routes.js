@@ -101,12 +101,61 @@ const notificationRoutes = app => {
     if (!notification || notification.accessKey !== accessKey) {
       return next(new HTTPError(404));
     } else {
-      return res.json(notification);
+      return res.status(200).json(notification);
     }
   });
 
   // create a new notification
-  app.post('/api/notifications', async (req, res) => {});
+  app.post('/api/notifications', async (req, res, next) => {
+    const data = req.body || {};
+    const requiredFields = [
+      'institutionKey',
+      'courseKey',
+      'termKey',
+      'contact',
+    ];
+    const optionalFields = ['enabled'];
+
+    // determine missing and extra fields
+    const missingFields = requiredFields.filter(
+      key => !data.hasOwnProperty(key)
+    );
+    const extraFields = Object.keys(data).filter(
+      key => !requiredFields.includes(key) && !optionalFields.includes(key)
+    );
+
+    // if missing and/or extra fields exist, respond with a suitable error
+    if (missingFields.length > 0) {
+      return next(
+        new HTTPError(
+          400,
+          `The notification object supplied is missing the following (required) fields: ${missingFields.join(
+            ', '
+          )}`
+        )
+      );
+    } else if (extraFields.length > 0) {
+      return next(
+        new HTTPError(
+          400,
+          `The notification object supplied has extra fields that are disallowed: ${extraFields.join(
+            ', '
+          )}`
+        )
+      );
+    }
+
+    // if no issues exist, create the new notification
+    const notification = await db.createNotification(data);
+
+    // return the notification if it was created successfully
+    if (notification) {
+      return res.status(201).json(notification);
+    } else {
+      // if no notification was returned AND no error thrown, simply 500
+      return next(new HTTPError());
+    }
+  });
 
   // don't allow new notifications to be created with IDs (409 conflict)
   app.post('/api/notifications/:notificationId', denyRoute(409));
