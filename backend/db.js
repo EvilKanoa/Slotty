@@ -389,7 +389,6 @@ class DB {
     }
 
     // execute the query
-    console.log(query);
     const result = this.db.runAsync(query);
 
     // check if the update succeeded and if so, return the updated notification fields + the id
@@ -571,7 +570,6 @@ class DB {
     }
 
     // execute and return the query
-    console.log(query);
     return (await this.db.allAsync(query)) || [];
   }
 }
