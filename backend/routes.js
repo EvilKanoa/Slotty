@@ -53,8 +53,9 @@ const errorHandler = (err, _req, res, next) => {
 
   // check if the error is expected
   if (err instanceof HTTPError) {
+    console.log('Caught HTTPError: ', err.json);
     res.status(err.status);
-    res.send(err.json);
+    res.json(err.json);
   } else {
     // log error to console to track unexpected issues
     console.error(err);
@@ -75,6 +76,23 @@ const denyRoute = statusCode => (_req, _res, next) =>
   next(new HTTPError(statusCode));
 
 /**
+ * Defines a generic express route handler for use with `withErrors`.
+ * @callback expressHandler
+ * @param {Object} req The express request object.
+ * @param {Object} res The express response object.
+ * @param {Function} next Callback function if extra functionality is needed.
+ * @returns {Promise<any>}
+ */
+/**
+ * Higher order function to wrap async express route handlers so that thrown errors get redirected to
+ * express's next(..) function.
+ * @param {expressHandler} handler The route handler that may reject.
+ * @returns {expressHandler} A new function which will catch any errors that occur within handler and pass them to next(...).
+ */
+const withErrors = handler => (req, res, next) =>
+  handler(req, res, next).catch(next);
+
+/**
  * Attaches notification-specific API routes to an express app instance.
  * @param {express} app Express app instance to attach notification API routes too.
  * @returns {undefined}
@@ -84,128 +102,141 @@ const notificationRoutes = app => {
   app.get('/api/notifications', denyRoute(405));
 
   // get notification by access key
-  app.get('/api/notifications/:accessKey', async (req, res, next) => {
-    const { accessKey } = req.params;
+  app.get(
+    '/api/notifications/:accessKey',
+    withErrors(async (req, res) => {
+      const { accessKey } = req.params;
 
-    // check that a valid access key was given
-    if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
-      return next(
-        new HTTPError(400, 'Access key must be a valid, non-empty string')
-      );
-    }
+      // check that a valid access key was given
+      if (
+        !accessKey ||
+        typeof accessKey !== 'string' ||
+        accessKey.length <= 0
+      ) {
+        throw new HTTPError(
+          400,
+          'Access key must be a valid, non-empty string'
+        );
+      }
 
-    // try to find the notification
-    const notification = await db.getNotification({ accessKey });
+      // try to find the notification
+      const notification = await db.getNotification({ accessKey });
 
-    // check if we found a notification or not and send the correct response
-    if (!notification || notification.accessKey !== accessKey) {
-      return next(new HTTPError(404));
-    } else {
-      return res.status(200).json(notification);
-    }
-  });
+      // check if we found a notification or not and send the correct response
+      if (!notification || notification.accessKey !== accessKey) {
+        throw new HTTPError(404);
+      } else {
+        return res.status(200).json(notification);
+      }
+    })
+  );
 
   // create a new notification
-  app.post('/api/notifications', async (req, res, next) => {
-    const data = req.body || {};
-    const requiredFields = [
-      'institutionKey',
-      'courseKey',
-      'termKey',
-      'contact',
-    ];
-    const optionalFields = ['enabled'];
+  app.post(
+    '/api/notifications',
+    withErrors(async (req, res) => {
+      const data = req.body || {};
+      const requiredFields = [
+        'institutionKey',
+        'courseKey',
+        'termKey',
+        'contact',
+      ];
+      const optionalFields = ['enabled'];
 
-    // determine missing and extra fields
-    const missingFields = requiredFields.filter(
-      key => !data.hasOwnProperty(key)
-    );
-    const extraFields = Object.keys(data).filter(
-      key => !requiredFields.includes(key) && !optionalFields.includes(key)
-    );
+      // determine missing and extra fields
+      const missingFields = requiredFields.filter(
+        key => !data.hasOwnProperty(key)
+      );
+      const extraFields = Object.keys(data).filter(
+        key => !requiredFields.includes(key) && !optionalFields.includes(key)
+      );
 
-    // if missing and/or extra fields exist, respond with a suitable error
-    if (missingFields.length > 0) {
-      return next(
-        new HTTPError(
+      // if missing and/or extra fields exist, respond with a suitable error
+      if (missingFields.length > 0) {
+        throw new HTTPError(
           400,
           `The notification object supplied is missing the following (required) fields: ${missingFields.join(
             ', '
           )}`
-        )
-      );
-    } else if (extraFields.length > 0) {
-      return next(
-        new HTTPError(
+        );
+      } else if (extraFields.length > 0) {
+        throw new HTTPError(
           400,
           `The notification object supplied has extra fields that are disallowed: ${extraFields.join(
             ', '
           )}`
-        )
-      );
-    }
+        );
+      }
 
-    // if no issues exist, create the new notification
-    const notification = await db.createNotification(data);
+      // if no issues exist, create the new notification
+      const notification = await db.createNotification(data);
 
-    // return the notification if it was created successfully
-    if (notification) {
-      return res.status(201).json(notification);
-    } else {
-      // if no notification was returned AND no error thrown, simply 500
-      return next(new HTTPError());
-    }
-  });
+      // return the notification if it was created successfully
+      if (notification) {
+        return res.status(201).json(notification);
+      } else {
+        // if no notification was returned AND no error thrown, simply 500
+        throw new HTTPError();
+      }
+    })
+  );
 
   // don't allow new notifications to be created with IDs (409 conflict)
   app.post('/api/notifications/:notificationId', denyRoute(409));
 
   // update a notification
-  app.put('/api/notifications/:accessKey', async (req, res, next) => {
-    const data = req.body || {};
-    const { accessKey } = req.params;
+  app.put(
+    '/api/notifications/:accessKey',
+    withErrors(async (req, res) => {
+      const data = req.body || {};
+      const { accessKey } = req.params;
 
-    // check that a valid access key was given
-    if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
-      return next(
-        new HTTPError(400, 'Access key must be a valid, non-empty string')
+      // check that a valid access key was given
+      if (
+        !accessKey ||
+        typeof accessKey !== 'string' ||
+        accessKey.length <= 0
+      ) {
+        throw new HTTPError(
+          400,
+          'Access key must be a valid, non-empty string'
+        );
+      }
+
+      // ensure only allowed fields have been specified
+      const allowedFields = [
+        'institutionKey',
+        'courseKey',
+        'termKey',
+        'contact',
+        'enabled',
+      ];
+      const extraFields = Object.keys(data).filter(
+        key => !allowedFields.includes(key)
       );
-    }
-
-    // ensure only allowed fields have been specified
-    const allowedFields = [
-      'institutionKey',
-      'courseKey',
-      'termKey',
-      'contact',
-      'enabled',
-    ];
-    const extraFields = Object.keys(data).filter(
-      key => !allowedFields.includes(key)
-    );
-    if (extraFields.length > 0) {
-      return next(
-        new HTTPError(
+      if (extraFields.length > 0) {
+        throw new HTTPError(
           400,
           `The notification changes object supplied has the following extra fields which are disallowed: ${extraFields.join(
             ', '
           )}`
-        )
-      );
-    }
+        );
+      }
 
-    // attempt to update the notification with the specified ID
-    const result = await db.updateNotification({ accessKey, ...data });
+      // attempt to update the notification with the specified ID
+      const result = await db.updateNotification({ accessKey, ...data });
 
-    // return the notification if it was updated successfully
-    if (result) {
-      const notification = await db.getNotification(result);
-      return res.status(200).json(notification || result);
-    } else {
-      // if no notification was returned then assume no notification was found
-      return next(new HTTPError(404));
-    }
-  });
+      // return the notification if it was updated successfully
+      if (result) {
+        const notification = await db.getNotification(result);
+        return res.status(200).json(notification || result);
+      } else {
+        // if no notification was returned then assume no notification was found
+        throw new HTTPError(404);
+      }
+    })
+  );
 };
 
 /**

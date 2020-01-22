@@ -40,4 +40,5 @@ process.on('SIGINT', () => process.exit(2));
   );
 })().catch(err => {
   console.error('Encountered a fatal error during setup', err);
+  cleanupHandler();
 });

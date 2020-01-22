@@ -143,12 +143,23 @@ const bindAsync = db => {
  */
 class DB {
   /**
+   * Internal database instance from sqlite3
+   * @type {sqlite3.Database}
+   */
+  db = null;
+
+  /**
+   * Internal string used to connect to the sqlite3 database.
+   * @type {String}
+   */
+  connectionString = '';
+
+  /**
    * Create a new database abstraction object for a given database.
    * @param {String} connectionString The filename or indicator for the location of the database to back this instance.
    */
   constructor(connectionString) {
     this.connectionString = connectionString;
-    this.db = null;
   }
 
   /**
