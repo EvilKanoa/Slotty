@@ -25,7 +25,7 @@ process.on('SIGINT', () => process.exit(2));
   const app = require('express')();
 
   // register middleware and routes for express app
-  app.use(require('body-parser').json());
+  app.use(require('body-parser').json({ type: '*/*' })); // assume all bodies are JSON
   require('./routes')(app);
 
   // connect to the database

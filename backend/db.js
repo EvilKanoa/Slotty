@@ -389,7 +389,7 @@ class DB {
     }
 
     // execute the query
-    const result = this.db.runAsync(query);
+    const result = await this.db.runAsync(query);
 
     // check if the update succeeded and if so, return the updated notification fields + the id
     if (!result || result.changes < 1) {

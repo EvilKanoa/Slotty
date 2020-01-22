@@ -87,7 +87,7 @@ const notificationRoutes = app => {
   app.get('/api/notifications/:accessKey', async (req, res, next) => {
     const { accessKey } = req.params;
 
-    // check that a valid notification ID was given
+    // check that a valid access key was given
     if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
       return next(
         new HTTPError(400, 'Access key must be a valid, non-empty string')
@@ -161,7 +161,51 @@ const notificationRoutes = app => {
   app.post('/api/notifications/:notificationId', denyRoute(409));
 
   // update a notification
-  app.put('/api/notifications/:notificationId', async (req, res) => {});
+  app.put('/api/notifications/:accessKey', async (req, res, next) => {
+    const data = req.body || {};
+    const { accessKey } = req.params;
+
+    // check that a valid access key was given
+    if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
+      return next(
+        new HTTPError(400, 'Access key must be a valid, non-empty string')
+      );
+    }
+
+    // ensure only allowed fields have been specified
+    const allowedFields = [
+      'institutionKey',
+      'courseKey',
+      'termKey',
+      'contact',
+      'enabled',
+    ];
+    const extraFields = Object.keys(data).filter(
+      key => !allowedFields.includes(key)
+    );
+    if (extraFields.length > 0) {
+      return next(
+        new HTTPError(
+          400,
+          `The notification changes object supplied has the following extra fields which are disallowed: ${extraFields.join(
+            ', '
+          )}`
+        )
+      );
+    }
+
+    // attempt to update the notification with the specified ID
+    const result = await db.updateNotification({ accessKey, ...data });
+
+    // return the notification if it was updated successfully
+    if (result) {
+      const notification = await db.getNotification(result);
+      return res.status(200).json(notification || result);
+    } else {
+      // if no notification was returned then assume no notification was found
+      return next(new HTTPError(404));
+    }
+  });
 };
 
 /**
@@ -177,11 +221,6 @@ module.exports = app => {
   // serve up all files in the 'frontend' directory statically
   // this provides a simple HTTP server
   app.use(express.static('frontend'));
-
-  // api route: testing
-  app.get('/test', (_req, res) => {
-    res.json({ test: 'oh yeah bby' });
-  });
 
   // attach API routes
   apiRoutes(app);
