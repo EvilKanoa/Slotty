@@ -17,6 +17,15 @@ module.exports = Object.freeze({
   isDev: process.env.NODE_ENV === 'development',
 
   /**
+   * Defines the format to tell morgan to use when logging requests.
+   * @see https://github.com/expressjs/morgan#readme
+   * @readonly
+   * @constant
+   * @type {String}
+   */
+  logFormat: 'common',
+
+  /**
    * Defines the port that slotty will bind its web and API server to by default.
    * If the environment variable "PORT" has been set, it will override this value.
    * @readonly
@@ -53,8 +62,8 @@ module.exports = Object.freeze({
    * @type {{ accountSid: String, authToken: String, fromNumber: String }}
    */
   twilio: {
-    accountSid: '',
-    authToken: '',
+    accountSid: 'ACfake',
+    authToken: 'fake',
     fromNumber: '',
   },
 
@@ -77,8 +86,8 @@ module.exports = Object.freeze({
    * @type {String}
    */
   messageTemplate: `
-Hello, this is an automated message from $app in relation to the notification with the following access key: $accessKey.
-An open slot has been detected for $institutionKey/$termKey/$courseKey as of $time.
+Hello, this is an automated message from $app in relation to the notification with the following access key: "$accessKey".
+Some open slots ($availableSlots/$totalSlots) have been detected for $courseKey ($institutionKey - $termKey) as of $time.
 We wish you luck, register fast!
 (Visit $app to disable this notification using the above access key.)
 `.trim(),

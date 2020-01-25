@@ -25,6 +25,7 @@ process.on('SIGINT', () => process.exit(2));
   const app = require('express')();
 
   // register middleware and routes for express app
+  app.use(require('morgan')(config.logFormat));
   app.use(require('body-parser').json({ type: '*/*' })); // assume all bodies are JSON
   require('./routes')(app);
 
@@ -38,7 +39,19 @@ process.on('SIGINT', () => process.exit(2));
     Slotty is now running on port ${port}!
     `)
   );
+
+  console.log(
+    require('./notify').formatNotification(
+      {
+        accessKey: 'k2j34b2',
+        institutionKey: 'UOG',
+        courseKey: 'CIS*3340*02',
+        termKey: 'W20',
+      },
+      { totalSlots: 10, availableSlots: 2 }
+    )
+  );
 })().catch(err => {
-  console.error('Encountered a fatal error during setup', err);
+  console.error('Encountered a fatal error during setup!\n', err);
   cleanupHandler();
 });

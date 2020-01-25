@@ -53,7 +53,6 @@ const errorHandler = (err, _req, res, next) => {
 
   // check if the error is expected
   if (err instanceof HTTPError) {
-    console.log('Caught HTTPError: ', err.json);
     res.status(err.status);
     res.json(err.json);
   } else {

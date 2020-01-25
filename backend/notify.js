@@ -34,6 +34,34 @@ class Notifier {
   }
 
   /**
+   * Given a notification and event data for said notification, this function will format a message that can then be sent.
+   * Note: This does not send a message, only applies the formatting required.
+   * @param {Object} notification A notification object from the database.
+   * @param {{ totalSlots: Number, availableSlots: Number }} event Object containing all fields related to the event in question.
+   * @returns {String} A formatted notification string.
+   */
+  formatNotification(notification, event) {
+    // define variables that can be used in the message and their values.
+    const variables = {
+      $app: config.appName,
+      $time: new Date().toUTCString(),
+      $availableSlots: event.availableSlots,
+      $totalSlots: event.totalSlots,
+      $accessKey: notification.accessKey,
+      $institutionKey: notification.institutionKey,
+      $courseKey: notification.courseKey,
+      $termKey: notification.termKey,
+      $contact: notification.contact,
+    };
+
+    // format and return the message string
+    return Object.keys(variables).reduce(
+      (msg, key) => msg.replace(new RegExp(`\\${key}`, 'ig'), variables[key]), // need to escape the '$' of the variable
+      config.messageTemplate
+    );
+  }
+
+  /**
    * Sends a message using the indicated type of service.
    * @throws {Error} If any service error occurs, it will be passed back.
    * @param {CONTACT_TYPE} type A value from CONTACT_TYPE indicating the sending service.
