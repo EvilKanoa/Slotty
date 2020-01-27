@@ -9,9 +9,11 @@ const sqlite3 = config.isDev
  * Notification entry that maps to the structure of notifications in the database.
  * @typedef {Object} Notification
  * @property {Number} id The internal identifier of this notification. Use to reference runs of this notification.
+ * @property {Number} lastRunId The ID of the last valid run that occurred for this notification.
  * @property {String} accessKey The external unique identifier of this notification. Can be used to look up a notification.
  * @property {String} institutionKey The key used to determine which institution the course is at, should match the key used on webadvisor-api.
- * @property {String} courseKey The course code that this notification is based upon, should include the section (e.g. CIS*1500*011).
+ * @property {String} courseKey The course code that this notification is based upon, should not include the section (e.g. CIS*1500 not CIS*1500*011).
+ * @property {(String|undefined)} sectionKey If undefined, notification is sent for any open section, otherwise, matches the section or meeting with the same key (dependent on institution).
  * @property {String} termKey The key used to determine which term the course occurs within (e.g. F19, W22, ect).
  * @property {String} contact The contact method used to send the notification.
  * @property {Boolean} enabled Whether this notification is currently enabled.
@@ -25,7 +27,6 @@ const sqlite3 = config.isDev
  * @property {Number} notificationId The internal identifier of the notification that triggered this run.
  * @property {String} error If any error occurred during this run, this field is populated with it.
  * @property {Date} timestamp When the run was executed.
- * @property {Boolean} courseOpen Whether the course in question had open slots at the time of running.
  * @property {Boolean} notificationSent Whether a notification was sent as a result of this run or previous runs with the same slots.
  *                                      This should be set to false when the course is closed up again.
  */
@@ -178,12 +179,18 @@ class DB {
     await this.db.runAsync(sql`
       CREATE TABLE IF NOT EXISTS notifications (
         notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        last_run_id INTEGER,
         access_key TEXT NOT NULL UNIQUE,
         institution_key TEXT NOT NULL,
         course_key TEXT NOT NULL,
+        section_key TEXT DEFAULT NULL,
         term_key TEXT NOT NULL,
         contact TEXT NOT NULL,
-        enabled BOOLEAN NOT NULL CHECK (enabled IN (0,1)) DEFAULT 1
+        enabled BOOLEAN NOT NULL CHECK (enabled IN (0,1)) DEFAULT 1,
+        FOREIGN KEY (last_run_id)
+          REFERENCES runs (run_id)
+            ON DELETE SET NULL
+            ON UPDATE RESTRICT
       )
     `);
 
@@ -194,12 +201,11 @@ class DB {
         notification_id INTEGER NOT NULL,
         error TEXT,
         timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        course_open BOOLEAN NOT NULL CHECK (course_open IN (0, 1)),
         notification_sent BOOLEAN NOT NULL CHECK (notification_sent IN (0, 1)),
         FOREIGN KEY (notification_id)
           REFERENCES notifications (notification_id)
             ON DELETE CASCADE
-            ON UPDATE NO ACTION
+            ON UPDATE CASCADE
       )
     `);
   }
@@ -292,6 +298,7 @@ class DB {
   async createNotification({
     institutionKey,
     courseKey,
+    sectionKey,
     termKey,
     contact,
     enabled = true,
@@ -314,8 +321,8 @@ class DB {
 
     // create the new notification
     const data = await this.db.runAsync(sql`
-      INSERT INTO notifications(access_key, institution_key, course_key, term_key, contact, enabled)
-      VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${termKey}, ${contact}, ${!!enabled})
+      INSERT INTO notifications(access_key, institution_key, course_key, section_key, term_key, contact, enabled)
+      VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${sectionKey}, ${termKey}, ${contact}, ${!!enabled})
     `);
 
     // return the new notification if it was inserted correctly
@@ -330,6 +337,7 @@ class DB {
         accessKey,
         institutionKey,
         courseKey,
+        sectionKey,
         termKey,
         contact,
         enabled: !!enabled,
@@ -345,13 +353,14 @@ class DB {
    *
    * Note 2: You cannot change / update the access key of a notification.
    * @param {Notification} notification The new data for the notification with notification.id used as a query.
-   * @returns {Promise<Notification>} Resolves with undefined if no matching notification exists.
+   * @returns {Promise<Notification>} Resolves with undefined if no matching notification exists or the updated properties if successful.
    */
   async updateNotification(notification) {
     // define the mapping of notification fields to db columns
     const fieldMapping = {
       institutionKey: 'institution_key',
       courseKey: 'course_key',
+      sectionKey: 'section_key',
       termKey: 'term_key',
       contact: 'contact',
       enabled: 'enabled',
@@ -378,19 +387,11 @@ class DB {
 
     // dynamically build the update statement
     fieldsToSet.forEach((key, idx, arr) => {
-      // append this set clause with or without a comma
-      if (idx === arr.length - 1) {
-        query = query.append(
-          [`${fieldMapping[key]} = `, ''],
-          notification[key]
-        );
-      } else {
-        query = query.append(
-          [`${fieldMapping[key]} = `, ','],
-          notification[key]
-        );
-      }
+      query = query.append([`${fieldMapping[key]} = `, ','], notification[key]);
     });
+
+    // reset lastRunId since this is now essentially a different notification
+    query = query.append`last_run_id = ${undefined}`;
 
     // add the where clause to specific the exact notification
     if (notification.id !== undefined) {
@@ -445,9 +446,11 @@ class DB {
     } else {
       return {
         id: data.notification_id,
+        lastRunId: data.last_run_id,
         accessKey: data.access_key,
         institutionKey: data.institution_key,
         courseKey: data.course_key,
+        sectionKey: data.section_key,
         termKey: data.term_key,
         contact: data.contact,
         enabled: !!data.enabled,
@@ -462,45 +465,71 @@ class DB {
    * @returns {Promise<NotificationRun>} The created notification entry.
    */
   async createRun(
-    {
-      notificationId,
-      error,
-      timestamp = new Date(),
-      courseOpen,
-      notificationSent,
-    } = {},
+    { notificationId, error, timestamp = new Date(), notificationSent } = {},
     defaultNotificationId
   ) {
     let myNotificationId =
       notificationId === undefined ? defaultNotificationId : notificationId;
 
     // ensure required fields were specified
-    if (
-      myNotificationId === undefined ||
-      courseOpen === undefined ||
-      notificationSent === undefined
-    ) {
+    if (myNotificationId === undefined || notificationSent === undefined) {
       throw new Error(
-        'Run must have a notification ID, courseOpen state, and notificationSent state specified'
+        'Run must have a notification ID and notificationSent state specified'
       );
     }
 
     // create the new run
     const data = await this.db.runAsync(sql`
-      INSERT INTO runs(notification_id, error, timestamp, course_open, notification_sent)
-      VALUES (${myNotificationId}, ${error}, ${timestamp}, ${!!courseOpen}, ${!!notificationSent})
+      INSERT INTO runs(notification_id, error, timestamp, notification_sent)
+      VALUES (${myNotificationId}, ${error}, ${timestamp}, ${!!notificationSent})
     `);
 
-    // return the new run if it was inserted correctly
+    // ensure the new run was inserted correctly
     if (!data || data.changes <= 0) {
       throw new Error('Failed to insert new run in database');
+    }
+
+    // update the relating notification that this is now its last run
+    let notificationUpdate = undefined;
+    let notificationErr = undefined;
+    try {
+      notificationUpdate = await this.db.runAsync(
+        sql`UPDATE notifications SET last_run_id = ${data.lastID} WHERE notification_id = ${myNotificationId}`
+      );
+    } catch (err) {
+      notificationErr = err;
+    }
+
+    // ensure we updated the matching notification
+    if (
+      notificationErr ||
+      !notificationUpdate ||
+      notificationUpdate.changes <= 0
+    ) {
+      // remove the run if we were unable to update the notification
+      try {
+        await this.db.runAsync(
+          sql`DELETE FROM runs WHERE run_id = ${data.lastID}`
+        );
+      } catch (err) {
+        console.warn(err);
+      }
+
+      // throw a relevant error
+      if (notificationErr) {
+        throw notificationErr;
+      } else {
+        throw new Error(
+          'Failed to update the related notification, please try again'
+        );
+      }
     } else {
+      // if all went well, return the newly created run
       return {
         id: data.lastID,
         notificationId,
         error,
         timestamp,
-        courseOpen: !!courseOpen,
         notificationSent: !!notificationSent,
       };
     }
@@ -531,7 +560,6 @@ class DB {
         notificationId: data.notification_id,
         error: data.error,
         timestamp: data.timestamp && new Date(data.timestamp),
-        courseOpen: !!data.course_open,
         notificationSent: !!data.notification_sent,
       };
     }

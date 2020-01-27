@@ -39,18 +39,6 @@ process.on('SIGINT', () => process.exit(2));
     Slotty is now running on port ${port}!
     `)
   );
-
-  console.log(
-    require('./notify').formatNotification(
-      {
-        accessKey: 'k2j34b2',
-        institutionKey: 'UOG',
-        courseKey: 'CIS*3340*02',
-        termKey: 'W20',
-      },
-      { totalSlots: 10, availableSlots: 2 }
-    )
-  );
 })().catch(err => {
   console.error('Encountered a fatal error during setup!\n', err);
   cleanupHandler();

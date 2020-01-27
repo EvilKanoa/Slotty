@@ -79,6 +79,7 @@ module.exports = Object.freeze({
    *  - $totalSlots: The current total number of slots.
    *  - $institutionKey: The value of notification.institutionKey.
    *  - $courseKey: The value of notification.courseKey.
+   *  - $sectionKey: The value of notification.sectionKey.
    *  - $termKey: The value of notification.termKey.
    *  - $contact: The value of notification.contact.
    * @readonly
@@ -87,7 +88,7 @@ module.exports = Object.freeze({
    */
   messageTemplate: `
 Hello, this is an automated message from $app in relation to the notification with the following access key: "$accessKey".
-Some open slots ($availableSlots/$totalSlots) have been detected for $courseKey ($institutionKey - $termKey) as of $time.
+Some open slots ($availableSlots/$totalSlots) have been detected for $courseKey/$sectionKey ($institutionKey - $termKey) as of $time.
 We wish you luck, register fast!
 (Visit $app to disable this notification using the above access key.)
 `.trim(),

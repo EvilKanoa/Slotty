@@ -17,6 +17,14 @@ class Notifier {
   };
 
   /**
+   * Defines the string that is used when undefined variables are used while formatting a message.
+   * @readonly
+   * @constant
+   * @type {String}
+   */
+  FALLBACK_VARIABLE_VALUE = '-';
+
+  /**
    * Contains a Twilio client object configured based upon user supplied options.
    * @type {Object}
    */
@@ -50,13 +58,18 @@ class Notifier {
       $accessKey: notification.accessKey,
       $institutionKey: notification.institutionKey,
       $courseKey: notification.courseKey,
+      $sectionKey: notification.sectionKey,
       $termKey: notification.termKey,
       $contact: notification.contact,
     };
 
     // format and return the message string
     return Object.keys(variables).reduce(
-      (msg, key) => msg.replace(new RegExp(`\\${key}`, 'ig'), variables[key]), // need to escape the '$' of the variable
+      (msg, key) =>
+        msg.replace(
+          new RegExp(`\\${key}`, 'ig'),
+          variables[key] || this.FALLBACK_VARIABLE_VALUE
+        ), // need to escape the '$' of the variable
       config.messageTemplate
     );
   }
@@ -66,7 +79,7 @@ class Notifier {
    * @throws {Error} If any service error occurs, it will be passed back.
    * @param {CONTACT_TYPE} type A value from CONTACT_TYPE indicating the sending service.
    * @param {String} destination The destination of the message.
-   * @param {(String|{ subject: String, body: String})} message The message to send. Either pass a single string to use as the body with a blank subject or an object containing both values.
+   * @param {(String|{ subject: String, body: String })} message The message to send. Either pass a single string to use as the body with a blank subject or an object containing both values.
    * @returns {Promise<Object>} Resolves with the API response if message was sent successfully.
    */
   async sendMessage(type, destination, message) {
