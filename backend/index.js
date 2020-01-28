@@ -33,10 +33,9 @@ process.on('SIGINT', () => process.exit(2));
   await db.open();
 
   // determine port and start the server
-  const port = process.env.PORT || config.port;
-  app.listen(port, () =>
+  app.listen(config.port, () =>
     console.log(`
-    Slotty is now running on port ${port}!
+    Slotty is now running on port ${config.port}!
     `)
   );
 })().catch(err => {

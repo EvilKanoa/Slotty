@@ -98,7 +98,11 @@ class Worker {
    * @private
    * @returns {undefined}
    */
-  intervalHandler() {
+  performSlotCheck() {
+    // 1. make DB call to list all notifications needing a check
+    // 2. generate set of all courses that are of interest (based on sections, hashtable?)
+    // 3. make a fetch for each course in parallel
+    // 4. for each course fetch, perform action required for each relating notification
     console.log('Worker executing');
   }
 }

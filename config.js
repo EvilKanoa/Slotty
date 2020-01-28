@@ -1,4 +1,17 @@
-module.exports = Object.freeze({
+const _ = require('lodash');
+const utils = require('./backend/utils');
+
+// load environment variables
+require('dotenv').config();
+
+/**
+ * Define the default options and types of the configuration.
+ * Note: If you want to change these values, a better option is to create a .env file.
+ *       All environment variables that match config options will get used instead.
+ * @readonly
+ * @type {Object}
+ */
+const config = {
   /**
    * Defines the name of the app that is used for any dynamic operations.
    * In particular, this is the name used when sending notifications.
@@ -92,4 +105,22 @@ Some open slots ($availableSlots/$totalSlots) have been detected for $courseKey/
 We wish you luck, register fast!
 (Visit $app to disable this notification using the above access key.)
 `.trim(),
-});
+};
+
+/**
+ * Defines all custom user set values that override the config defaults.
+ * These are passed in as environment variables. Use SCREAMING_SNAKE_CASE.
+ * To access config values that are subitems, simply use an underscore.
+ * @readonly
+ * @type {Object}
+ */
+const overrideConfig = utils
+  .getPrimitiveKeys(config)
+  .map(configKey => ({ configKey, envKey: utils.snakeCase(configKey.split('.'), true) }))
+  .filter(({ envKey }) => process.env.hasOwnProperty(envKey))
+  .reduce((obj, { configKey, envKey }) => _.set(obj, configKey, process.env[envKey]), {});
+
+// merge the custom overrides into the base config and export that
+module.exports = Object.freeze(_.merge({}, config, overrideConfig));
+
+console.log(module.exports); console.log(overrideConfig)
