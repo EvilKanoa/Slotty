@@ -1,3 +1,5 @@
+const _ = require('lodash');
+const db = require('./db');
 const config = require('../config');
 
 /**
@@ -64,7 +66,8 @@ class Worker {
   /**
    * Starts this worker instance running.
    * Note: If this function is called while the worker is already running, the worker will be restarted.
-   * @returns {undefined}
+   * This method returns the worker instance and thus can be chained.
+   * @returns {this} This worker for chaining.
    */
   start() {
     // check if this worker is already running
@@ -73,13 +76,17 @@ class Worker {
       this.stop();
     }
 
-    this.intervalID = setInterval(this.intervalHandler);
+    // start the new interval and save the id (need to use an arrow function to keep `this` binded to the worker instance)
+    this.intervalID = setInterval(() => this.intervalHandler(), this.interval);
+
+    return this;
   }
 
   /**
    * Stops this worker instance from running.
    * Note: If worker is already stopped, this has no effect.
-   * @returns {undefined}
+   * This method returns the worker instance and thus can be chained.
+   * @returns {this} This worker for chaining.
    */
   stop() {
     // check if this worker is already stopped
@@ -91,19 +98,59 @@ class Worker {
     clearInterval(this.intervalID);
     // reset the interval id
     this.intervalID = undefined;
+
+    return this;
   }
 
   /**
    * Handler function that is registered with setInterval to execute this worker.
    * @private
-   * @returns {undefined}
+   * @returns {Promise<Number>} Resolves if check completes successfully with the number of notifications sent.
    */
-  performSlotCheck() {
+  async performSlotCheck() {
     // 1. make DB call to list all notifications needing a check
     // 2. generate set of all courses that are of interest (based on sections, hashtable?)
     // 3. make a fetch for each course in parallel
     // 4. for each course fetch, perform action required for each relating notification
-    console.log('Worker executing');
+
+    // grab all active notifications (TODO: use limiting if required for performance)
+    const notifications = await db.listActiveNotifications();
+    // now generate an object identifying each course and a list of its dependent notifications per institution
+    const notificationsByCourse = _(notifications)
+      .groupBy('institutionKey')
+      .mapValues(notifications => _.groupBy(notifications, 'courseKey'))
+      .value();
+
+    // generate the list of requests that will be made
+    const requests = _.flatMap(
+      notificationsByCourse,
+      (courses, institutionKey) =>
+        _(courses)
+          .keys()
+          .map(courseKey => ({ institutionKey, courseKey }))
+          .value()
+    );
+
+    console.log(requests);
+  }
+
+  /**
+   * Handler function that is invoked by setInterval and is responsible for call performSlotCheck().
+   * Wraps performSlotCheck in an error handler and logger.
+   * @private
+   * @returns {undefined}
+   */
+  intervalHandler() {
+    console.log('\nWorker task starting execution...');
+
+    // execute the slot check and attach handlers for success and failure conditions
+    this.performSlotCheck()
+      .then((numSent = 0) =>
+        console.log(
+          `Worker task ran successfully, ${numSent} notifications were sent.`
+        )
+      )
+      .catch(err => console.error(err));
   }
 }
 

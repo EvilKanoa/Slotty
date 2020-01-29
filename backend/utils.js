@@ -103,4 +103,12 @@ const utils = (module.exports = {
     // return the built list of keys
     return keys;
   },
+
+  /**
+   * Takes a date or date like object as input and returns an integer representing the number of seconds since the unix epoch.
+   * Note: Despite referencing the unix epoch, this actually is based on the ECMAScript epoch which is currently the same.
+   * @param {(Date|Number|String)} dateLike The date to parse. Can be passed as a Date object, a date string, or an epoch integer. Note that this is parsed using the nasty new Date(...) constructor.
+   * @returns {Number} The number of seconds since the unix epoch.
+   */
+  toUnixEpoch: dateLike => Math.floor(new Date(dateLike).valueOf() / 1000),
 });

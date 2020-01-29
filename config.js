@@ -48,6 +48,26 @@ const config = {
   port: 8080,
 
   /**
+   * Defines the interval, in seconds, between each slot check that is performed.
+   * Each slot check will make a large number of HTTP requests (GraphQL queries) to webadvisor-api.
+   * Note: Do not set this value too low or you may get rate limited, on the other hand, if you set it to high, you may miss open slots.
+   * @readonly
+   * @constant
+   * @type {Number}
+   */
+  workerInterval: 15 /* seconds */,
+
+  /**
+   * Defines the time, in seconds, that results from slot checks will be considered valid for.
+   * If this value is less than the workerInterval, all notifications will be checked on every worker run.
+   * Otherwise, if this value is larger than worker interval, notifications will end up being checked in chunks.
+   * @readonly
+   * @constant
+   * @type {Number}
+   */
+  slotDataTtl: 0 /* seconds */,
+
+  /**
    * Defines what file should back the SQLite database depending on the mode of the app.
    * It is highly recommended to use a file-based location for production so data persists
    * accross app reboots (and crashes). When developing, it may be faster to simply use the
@@ -122,5 +142,3 @@ const overrideConfig = utils
 
 // merge the custom overrides into the base config and export that
 module.exports = Object.freeze(_.merge({}, config, overrideConfig));
-
-console.log(module.exports); console.log(overrideConfig)

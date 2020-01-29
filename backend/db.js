@@ -1,3 +1,4 @@
+const _ = require('lodash');
 const config = require('../config');
 const utils = require('./utils');
 // enable verbose db logging when in dev mode
@@ -32,7 +33,67 @@ const sqlite3 = config.isDev
  */
 
 /**
+ * A combined data type that contains both a notification as well as the data for the last run of the notification.
+ * These objects are only intended to be created for notifications that actively need actions performed.
+ * @typedef {Object} ActiveNotification
+ * @property {undefined} id The ID field is NOT used when a notification and run are combined, refer to `notificationId` and `runId` instead.
+ * @property {Number} notificationId The interval identifier of the notification contained in this object.
+ * @property {Number} runId The internal identifier of the run contained in this object, in all valid cases, this should match `lastRunId`.
+ * @mixes Notification
+ * @mixes NotificationRun
+ */
+
+/**
+ * Utility function to convert a notification entry object from the database to a data object.
+ * @param {Object} [data={}] The result of a query on the notifications table of the database.
+ * @param {Notification} [overrides={}] An object of fields to use to override those within (or not within) data.
+ * @returns {Notification} The Javascript object for the notification that was passed in.
+ */
+const toNotification = (data = {}, overrides = {}) => ({
+  id: data.notification_id || undefined,
+  notificationId: data.notification_id || undefined,
+  lastRunId: data.last_run_id,
+  accessKey: data.access_key || undefined,
+  institutionKey: data.institution_key,
+  courseKey: data.course_key,
+  sectionKey: data.section_key || undefined,
+  termKey: data.term_key,
+  contact: data.contact,
+  enabled: !!data.enabled,
+  ...overrides,
+});
+
+/**
+ * Utility function to convert a run entry object from the database to a data object.
+ * @param {Object} [data={}] The result of a query on the runs table of the database.
+ * @param {NotificationRun} [overrides={}] An object of fields to use to override those within (or not within) data.
+ * @returns {NotificationRun} The Javascript object for the run that was passed in.
+ */
+const toRun = (data = {}, overrides = {}) => ({
+  id: data.run_id || undefined,
+  runId: data.run_id || undefined,
+  notificationId: data.notification_id || undefined,
+  error: data.error,
+  timestamp: data.timestamp ? new Date(data.timestamp * 1000) : undefined,
+  notificationSent: !!data.notification_sent,
+  ...overrides,
+});
+
+/**
+ * Utility function to convert an active notification entry object from the database to a data object.
+ * @param {Object} [data={}] The result of a query on the notifications table joined with the runs table.
+ * @param {ActiveNotification} [overrides={}] An object of fields to use to override those within (or not within) data.
+ * @returns {ActiveNotification} The Javascript object for the active notification that was passed in.
+ */
+const toActiveNotification = (data = {}, overrides = {}) => ({
+  ..._.merge({}, toRun(data), toNotification(data)), // merge the notification and run data together
+  ...overrides, // apply overrides afterwards to ensure undefined values override
+  id: undefined, // forcefully remove the id value if one was given
+});
+
+/**
  * Tagged template for constructing SQL statements that will be used with sqlite3.
+ * Values are passed as is, except for date objects. Any date objects will be converted to unix epoch in seconds via utils.toUnixEpoch(...).
  * @example
  * // insert a value into a table
  * db.run(...sql`INSERT INTO table VALUES (${'My first value'}, ${4})`);
@@ -56,7 +117,7 @@ const sql = (literals, ...values) => {
       .join('?')
       .replace(/\s+/g, ' ')
       .trim(),
-    values,
+    values.map(val => (val instanceof Date ? utils.toUnixEpoch(val) : val)),
   ];
 
   // add a utility method that allows appending multiple sql strings
@@ -332,16 +393,20 @@ class DB {
         accessKey
       );
     } else {
-      return {
-        id: data.lastID,
-        accessKey,
-        institutionKey,
-        courseKey,
-        sectionKey,
-        termKey,
-        contact,
-        enabled: !!enabled,
-      };
+      return toNotification(
+        {
+          notification_id: data.lastID,
+        },
+        {
+          accessKey,
+          institutionKey,
+          courseKey,
+          sectionKey,
+          termKey,
+          contact,
+          enabled: !!enabled,
+        }
+      );
     }
   }
 
@@ -407,10 +472,7 @@ class DB {
     if (!result || result.changes < 1) {
       return undefined;
     } else {
-      return {
-        ...notification,
-        notificationId: result.lastID,
-      };
+      return toNotification({ notification_id: result.lastID }, notification);
     }
   }
 
@@ -444,17 +506,7 @@ class DB {
     if (!data) {
       return undefined;
     } else {
-      return {
-        id: data.notification_id,
-        lastRunId: data.last_run_id,
-        accessKey: data.access_key,
-        institutionKey: data.institution_key,
-        courseKey: data.course_key,
-        sectionKey: data.section_key,
-        termKey: data.term_key,
-        contact: data.contact,
-        enabled: !!data.enabled,
-      };
+      return toNotification(data);
     }
   }
 
@@ -525,13 +577,15 @@ class DB {
       }
     } else {
       // if all went well, return the newly created run
-      return {
-        id: data.lastID,
-        notificationId,
-        error,
-        timestamp,
-        notificationSent: !!notificationSent,
-      };
+      return toRun(
+        { run_id: data.lastID },
+        {
+          notificationId,
+          error,
+          timestamp,
+          notificationSent: !!notificationSent,
+        }
+      );
     }
   }
 
@@ -555,13 +609,7 @@ class DB {
     if (!data) {
       return undefined;
     } else {
-      return {
-        id: data.run_id,
-        notificationId: data.notification_id,
-        error: data.error,
-        timestamp: data.timestamp && new Date(data.timestamp),
-        notificationSent: !!data.notification_sent,
-      };
+      return toRun(data);
     }
   }
 
@@ -608,8 +656,48 @@ class DB {
       query = query.append`LIMIT ${limit}`;
     }
 
-    // execute and return the query
-    return (await this.db.allAsync(query)) || [];
+    // execute the query and return the transformed data
+    const data = (await this.db.allAsync(query)) || [];
+    return data.map(toRun);
+  }
+
+  /**
+   * Queries for a list of all notifications needing actions performed determined by comparing how old their data is and a specific TTL for said data.
+   * That is, this will list all notifications combined with their last run that have exceeded the TTL specified based on the last run timestamp and the specified effective TTL value.
+   * Results are returned with the oldest data first.
+   * @param {Number} [effectiveTtl=config.slotDataTtl] Specific the effective time-to-live to use when determining if a notification is active now.
+   * @param {Number} [limit=-1] Limit the number of notifications return to allow pagination of listings. Defaults to -1 indicating no limit.
+   * @returns {Promise<Array<ActiveNotification>>} List of all notifications that have passed their TTL with respect to their last run.
+   */
+  async listActiveNotifications(effectiveTtl = config.slotDataTtl, limit = -1) {
+    // ensure the effectiveTtl value is usable
+    if (typeof effectiveTtl !== 'number' || effectiveTtl < 0) {
+      throw new Error(
+        'The effective TTL must be a number with a value of 0 or greater'
+      );
+    }
+
+    // convert our effective TTL into an offset string that sqlite can understand
+    const ttl = `+${effectiveTtl} seconds`;
+
+    // start by building the query explicitly
+    // we need to explicitly select the `notification_id` from the notification so if a run is missing, we don't get null
+    const query = sql`
+      SELECT *, notifications.notification_id FROM notifications
+      LEFT JOIN runs
+      ON notifications.last_run_id = runs.run_id
+      WHERE
+        notifications.last_run_id IS NULL OR
+        datetime(runs.timestamp, 'unixepoch', ${ttl}) < datetime('now')
+      ORDER BY runs.timestamp ASC
+      LIMIT ${limit}
+    `;
+
+    // execute the query
+    const data = (await this.db.allAsync(query)) || [];
+
+    // transform and return the data
+    return data.map(toActiveNotification);
   }
 }
 
