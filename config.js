@@ -19,7 +19,7 @@ const config = {
    * @constant
    * @type {String}
    */
-  appName: "Slotty",
+  appName: 'Slotty',
 
   /**
    * Provides a wrapper around the app environment.
@@ -28,6 +28,14 @@ const config = {
    * @type {Boolean}
    */
   isDev: process.env.NODE_ENV === 'development',
+
+  /**
+   * Defines the URL of the webadvisor-api that will be used to perform course lookups.
+   * @readonly
+   * @constant
+   * @type {String}
+   */
+  webadvisorApi: 'https://webadvisor-api.herokuapp.com/graphql',
 
   /**
    * Defines the format to tell morgan to use when logging requests.
@@ -136,9 +144,27 @@ We wish you luck, register fast!
  */
 const overrideConfig = utils
   .getPrimitiveKeys(config)
-  .map(configKey => ({ configKey, envKey: utils.snakeCase(configKey.split('.'), true) }))
+  .map(configKey => ({
+    configKey,
+    envKey: utils.snakeCase(configKey.split('.'), true),
+  }))
   .filter(({ envKey }) => process.env.hasOwnProperty(envKey))
-  .reduce((obj, { configKey, envKey }) => _.set(obj, configKey, process.env[envKey]), {});
+  .reduce((obj, { configKey, envKey }) => {
+    let value = process.env[envKey];
+
+    // parse the value correctly depending on type
+    switch (typeof _.get(config, configKey)) {
+      case 'number':
+        value = parseFloat(value);
+        break;
+      case 'boolean':
+        value = value.trim().toLowerCase() === 'true';
+        break;
+    }
+
+    // add the override value that we just parsed
+    return _.set(obj, configKey, value);
+  }, {});
 
 // merge the custom overrides into the base config and export that
 module.exports = Object.freeze(_.merge({}, config, overrideConfig));

@@ -1,6 +1,37 @@
 const _ = require('lodash');
+const { GraphQLClient } = require('graphql-request');
 const db = require('./db');
-const config = require('../config');
+
+/**
+ * Defines the GraphQL query that is used to retrieve the current number of available slots for a given course.
+ * Must be used with the following variables object: { institutionKey, courseKey, termKey }.
+ * @type {String}
+ */
+const slotsQuery = `
+  query Slots(
+    $courseKey: String!
+    $termKey: Term!
+    $institutionKey: School!
+  ) {
+    course(
+      code: $courseKey
+      institution: $institutionKey
+      term: $termKey
+    ) {
+      sections {
+        id
+        available
+        capacity
+        meetings {
+          type
+          name
+          available
+          capacity
+        }
+      }
+    }
+  }
+`;
 
 /**
  * Handles actual notification checking and sending for Slotty.
@@ -14,6 +45,13 @@ class Worker {
    * @type {(Number|undefined)}
    */
   intervalID = undefined;
+
+  /**
+   * Holds an instance of a GraphQLClient that can be used to perform course lookups.
+   * This value should never be undefined after instance construction.
+   * @type {GraphQLClient}
+   */
+  gql = undefined;
 
   /**
    * Controls the interval value used with setInterval when executing this worker.
@@ -59,7 +97,8 @@ class Worker {
    * Note: You must call worker.start() to begin running your worker.
    * @param {Number} interval The duration between executions of this worker in milliseconds.
    */
-  constructor(interval) {
+  constructor(interval, webadvisorApi) {
+    this.gql = new GraphQLClient(webadvisorApi, { mode: 'cors' });
     this._interval = interval;
   }
 
@@ -113,25 +152,93 @@ class Worker {
     // 3. make a fetch for each course in parallel
     // 4. for each course fetch, perform action required for each relating notification
 
+    // this function handles step 4 from above, it will perform actions on an individual notification basis
+    const performSingleCheck = async (notification, data) => {
+      console.log('Perform action...', { notification, data });
+    };
+
+    // the following two variables achieve step 1 from above
     // grab all active notifications (TODO: use limiting if required for performance)
     const notifications = await db.listActiveNotifications();
-    // now generate an object identifying each course and a list of its dependent notifications per institution
+    // now generate an object identifying each course and a list of its dependent notifications per institution->course->term
     const notificationsByCourse = _(notifications)
       .groupBy('institutionKey')
-      .mapValues(notifications => _.groupBy(notifications, 'courseKey'))
+      .mapValues(notifications =>
+        _(notifications)
+          .groupBy('courseKey')
+          .mapValues(notifications => _.groupBy(notifications, 'termKey'))
+          .value()
+      )
       .value();
 
-    // generate the list of requests that will be made
-    const requests = _.flatMap(
-      notificationsByCourse,
-      (courses, institutionKey) =>
-        _(courses)
-          .keys()
-          .map(courseKey => ({ institutionKey, courseKey }))
-          .value()
-    );
+    // generate the list of requests that are being made (which is step 2)
+    const requests = _(notificationsByCourse)
+      .flatMap((courses, institutionKey) =>
+        _.flatMap(courses, (courses, courseKey) =>
+          _(courses)
+            .keys()
+            .map(termKey => ({ institutionKey, courseKey, termKey }))
+            .value()
+        )
+      )
+      // the above resulted in an array of objects with the keys for institution, course, and term
+      .filter(req => req.institutionKey && req.courseKey && req.termKey)
+      .map(async variables => {
+        // make the fetch request for an individual course (course, institution, and term are variables)
+        // this request is step 3 from above
+        const data = await this.gql
+          .request(slotsQuery, variables)
+          .catch(err => {
+            // output any graphql errors that occur
+            console.log(
+              'Encountered error while fetching slot data using variables: ',
+              variables
+            );
+            console.error(err.response.errors);
 
-    console.log(requests);
+            // return a falsey value so we are aware that an issue has occured
+            return undefined;
+          });
+
+        // exit early if an error occured
+        if (!data) {
+          return 0;
+        }
+
+        // perform actions for each individual notification and return promises for each
+        const { institutionKey, courseKey, termKey } = variables;
+        const actions = _.map(
+          notificationsByCourse[institutionKey][courseKey][termKey],
+          notification =>
+            // now that we have info for a course, we need to perform actions for each notification dependent on that course
+            // this calls the function that performs step 4 from above
+            performSingleCheck(notification, data)
+              .then(sent => (typeof sent === 'number' ? sent : 1))
+              .catch(err => {
+                console.log(
+                  'Encountered error while performing action on a notification',
+                  { notification, data }
+                );
+                console.error(err);
+                return 0;
+              })
+        );
+
+        // return the combined actions and once they're complete, calculate the count of successes
+        return Promise.allSettled(actions).then(results =>
+          _(results)
+            .map(({ value }) => value || 0)
+            .sum()
+        );
+      })
+      .value();
+
+    // return the combined requests and again compute the count of successes overall
+    return Promise.allSettled(requests).then(results =>
+      _(results)
+        .map(({ value }) => value || 0)
+        .sum()
+    );
   }
 
   /**
@@ -150,7 +257,10 @@ class Worker {
           `Worker task ran successfully, ${numSent} notifications were sent.`
         )
       )
-      .catch(err => console.error(err));
+      .catch(err => {
+        console.log('Worker task encountered an error.');
+        console.error(err);
+      });
   }
 }
 

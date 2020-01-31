@@ -34,7 +34,7 @@ process.on('SIGINT', () => process.exit(2));
   await db.open();
 
   // create and run a task worker
-  const worker = new Worker(config.workerInterval * 1000);
+  const worker = new Worker(config.workerInterval * 1000, config.webadvisorApi);
   worker.start();
 
   // determine port and start the server

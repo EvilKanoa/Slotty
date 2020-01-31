@@ -687,8 +687,11 @@ class DB {
       LEFT JOIN runs
       ON notifications.last_run_id = runs.run_id
       WHERE
-        notifications.last_run_id IS NULL OR
-        datetime(runs.timestamp, 'unixepoch', ${ttl}) < datetime('now')
+        (
+          notifications.last_run_id IS NULL OR
+          datetime(runs.timestamp, 'unixepoch', ${ttl}) < datetime('now')
+        ) AND
+        notifications.enabled = ${true}
       ORDER BY runs.timestamp ASC
       LIMIT ${limit}
     `;
