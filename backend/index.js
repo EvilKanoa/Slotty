@@ -62,7 +62,7 @@ process.on('SIGINT', () => process.exit(2));
         institutionKey: 'UOG',
         courseKey: 'CIS*1500',
         termKey: 'W20',
-        contact: 'default@default.com',
+        contact: '+11111111111',
         ...fields,
       }))
       .map(notification => db.createNotification(notification))
@@ -81,7 +81,7 @@ process.on('SIGINT', () => process.exit(2));
           runs.push(
             db.createRun({
               notificationId: id,
-              notificationSent: Math.random() >= 0.75,
+              notificationSent: Math.random() >= 0.95,
             })
           );
         }

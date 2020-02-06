@@ -1,6 +1,7 @@
 const _ = require('lodash');
 const { GraphQLClient } = require('graphql-request');
 const db = require('./db');
+const notifier = require('./notify');
 
 /**
  * Defines the GraphQL query that is used to retrieve the current number of available slots for a given course.
@@ -154,7 +155,101 @@ class Worker {
 
     // this function handles step 4 from above, it will perform actions on an individual notification basis
     const performSingleCheck = async (notification, data) => {
-      console.log('Perform action...', { notification, data });
+      // ensure the notification is enabled and course data is present
+      if (
+        !notification.enabled ||
+        !data ||
+        !data.course ||
+        !data.course.sections
+      ) {
+        console.error('Unable to perform action with insufficient data', {
+          notification,
+          data,
+        });
+
+        return 0;
+      }
+
+      // object to store event related data
+      const event = {};
+
+      // contains the cleaned section or meeting key
+      const key =
+        notification.sectionKey && notification.sectionKey.toLowerCase().trim();
+      // contains the data used to trigger this run
+      const sourceData = JSON.stringify(data);
+
+      // check if the notification is related to the whole course or a specific section
+      if (key && key.length) {
+        // convert to a list of sections and meetings combined, section key can refer to a specific section or specific meeting
+        const section = data.course.sections
+          .concat(
+            data.course.sections.flatMap(({ meetings }) => meetings || [])
+          )
+          .filter(
+            ({ id, available, capacity }) =>
+              id && id.length && available != null && capacity != null
+          )
+          .find(({ id }) => id.toLowerCase().trim() === key);
+
+        // check if we found a valid section and assign event data
+        if (section && section.id) {
+          event.availableSlots = section.available;
+          event.totalSlots = section.capacity;
+        } else {
+          event.availableSlots = 0;
+          event.totalSlots = 0;
+        }
+      } else {
+        // determine what the maximum available slots is for any section of this course
+        const { available, capacity } = data.course.sections.reduce(
+          (max, { available, capacity }) =>
+            available > max.available ? { available, capacity } : max,
+          { available: 0, capacity: 0 }
+        );
+
+        // assign results to our event data
+        event.availableSlots = available;
+        event.totalSlots = capacity;
+      }
+
+      // check what actions need to be performed
+      if (notification.notificationSent && event.availableSlots > 0) {
+        // already sent notification for these slots, no need to send again, just add this run
+        await db.createRun(
+          { notificationSent: true, sourceData },
+          notification.notificationId
+        );
+
+        // indicate that no notification was sent
+        return 0;
+      } else if (event.availableSlots <= 0) {
+        // either previously sent notification and need to reset, or need no action
+        await db.createRun(
+          { notificationSent: false, sourceData },
+          notification.notificationId
+        );
+
+        // indicate that no notification was sent
+        return 0;
+      } else if (event.availableSlots > 0) {
+        // need to send notification and add new run with notificationSent = true
+        let error = undefined; // holds an error message if needed
+
+        // attempt to send a notification message and capture any error that occurs
+        await notifier
+          .sendNotification(notification, event)
+          .catch(err => (error = err));
+
+        // log run in db
+        await db.createRun(
+          { notificationSent: true, error, sourceData },
+          notification.notificationId
+        );
+
+        // indicate that a notification was sent
+        return 1;
+      }
     };
 
     // the following two variables achieve step 1 from above
@@ -194,14 +289,21 @@ class Worker {
               'Encountered error while fetching slot data using variables: ',
               variables
             );
-            console.error(err.response.errors);
+            console.error(err.response.errors || err || 'No error reported');
 
-            // return a falsey value so we are aware that an issue has occured
+            // return a falsey value so we are aware that an issue has occurred
             return undefined;
           });
 
-        // exit early if an error occured
+        // exit early if an error occurred
         if (!data) {
+          return 0;
+        } else if (!data.course || !data.course.sections) {
+          // if no error occurred but no sections found, log error and exit early
+          console.error(
+            `Unable to retrieve section data for ${variables.institutionKey} - ${variables.courseKey} - ${variables.termKey}.`
+          );
+
           return 0;
         }
 
@@ -220,6 +322,7 @@ class Worker {
                   { notification, data }
                 );
                 console.error(err);
+
                 return 0;
               })
         );
@@ -234,11 +337,13 @@ class Worker {
       .value();
 
     // return the combined requests and again compute the count of successes overall
-    return Promise.allSettled(requests).then(results =>
-      _(results)
-        .map(({ value }) => value || 0)
-        .sum()
-    );
+    return Promise.allSettled(requests)
+      .then(results =>
+        _(results)
+          .map(({ value }) => value || 0)
+          .sum()
+      )
+      .then(sent => ({ total: notifications.length, sent }));
   }
 
   /**
@@ -252,9 +357,10 @@ class Worker {
 
     // execute the slot check and attach handlers for success and failure conditions
     this.performSlotCheck()
-      .then((numSent = 0) =>
+      .then(({ sent, total } = {}) =>
         console.log(
-          `Worker task ran successfully, ${numSent} notifications were sent.`
+          `Worker task ran successfully, processed ${total ||
+            0} notifications resulting in ${sent} messages being sent.`
         )
       )
       .catch(err => {

@@ -27,6 +27,7 @@ const sqlite3 = config.isDev
  * @property {Number} id The internal identifier of this run.
  * @property {Number} notificationId The internal identifier of the notification that triggered this run.
  * @property {String} error If any error occurred during this run, this field is populated with it.
+ * @property {String} sourceData Optional string containing the data used to trigger this run.
  * @property {Date} timestamp When the run was executed.
  * @property {Boolean} notificationSent Whether a notification was sent as a result of this run or previous runs with the same slots.
  *                                      This should be set to false when the course is closed up again.
@@ -74,6 +75,7 @@ const toRun = (data = {}, overrides = {}) => ({
   runId: data.run_id || undefined,
   notificationId: data.notification_id || undefined,
   error: data.error,
+  sourceData: data.source_data,
   timestamp: data.timestamp ? new Date(data.timestamp * 1000) : undefined,
   notificationSent: !!data.notification_sent,
   ...overrides,
@@ -261,6 +263,7 @@ class DB {
         run_id INTEGER PRIMARY KEY AUTOINCREMENT,
         notification_id INTEGER NOT NULL,
         error TEXT,
+        source_data TEXT,
         timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         notification_sent BOOLEAN NOT NULL CHECK (notification_sent IN (0, 1)),
         FOREIGN KEY (notification_id)
@@ -517,7 +520,13 @@ class DB {
    * @returns {Promise<NotificationRun>} The created notification entry.
    */
   async createRun(
-    { notificationId, error, timestamp = new Date(), notificationSent } = {},
+    {
+      notificationId,
+      error,
+      sourceData,
+      timestamp = new Date(),
+      notificationSent,
+    } = {},
     defaultNotificationId
   ) {
     let myNotificationId =
@@ -532,8 +541,8 @@ class DB {
 
     // create the new run
     const data = await this.db.runAsync(sql`
-      INSERT INTO runs(notification_id, error, timestamp, notification_sent)
-      VALUES (${myNotificationId}, ${error}, ${timestamp}, ${!!notificationSent})
+      INSERT INTO runs(notification_id, error, source_data, timestamp, notification_sent)
+      VALUES (${myNotificationId}, ${error}, ${sourceData}, ${timestamp}, ${!!notificationSent})
     `);
 
     // ensure the new run was inserted correctly
@@ -582,6 +591,7 @@ class DB {
         {
           notificationId,
           error,
+          sourceData,
           timestamp,
           notificationSent: !!notificationSent,
         }
