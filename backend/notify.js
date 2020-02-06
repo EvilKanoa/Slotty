@@ -14,6 +14,7 @@ class Notifier {
   CONTACT_TYPE = {
     EMAIL: 'email',
     TEXT: 'text',
+    UNKNOWN: 'unknown',
   };
 
   /**
@@ -75,6 +76,37 @@ class Notifier {
   }
 
   /**
+   * Smart notification sending. Handles contact type determination and formatting as well as message formatting.
+   * Call with a notification and associated event data to trigger a message to be sent if possible.
+   * @throws
+   * @param {Object} notification A notification object from the database.
+   * @param {{ totalSlots: Number, availableSlots: Number }} event Object containing all fields related to the event in question.
+   * @returns {Promise<Object>} Resolves if notification sent successfully with API result data or rejects with an error.
+   */
+  async sendNotification(notification, event = {}) {
+    // ensure that params are sufficient
+    if (!notification || !notification.contact) {
+      throw new Error(
+        'Notification object must be present and contain a contact value'
+      );
+    }
+
+    // determine the correct contact method if available
+    const contactInfo = this.getContactInfo(notification.contact);
+    if (contactInfo.type === this.CONTACT_TYPE.UNKNOWN) {
+      throw new Error(
+        'Unknown contact type for notification, unable to send notification'
+      );
+    }
+
+    // build the notification message
+    const message = this.formatNotification(notification, event);
+
+    // send the notification
+    return this.sendMessage(contactInfo.type, contactInfo.destination, message);
+  }
+
+  /**
    * Sends a message using the indicated type of service.
    * @throws {Error} If any service error occurs, it will be passed back.
    * @param {CONTACT_TYPE} type A value from CONTACT_TYPE indicating the sending service.
@@ -126,6 +158,37 @@ class Notifier {
         throw new Error('Email type is not currently implemented');
       default:
         throw new Error('Unknown CONTACT_TYPE, unable to send message');
+    }
+  }
+
+  /**
+   * Utility function to help determine what contact type to use for a given destination.
+   * Additionally, will prepare the destination string for use. This may require some clean up depending on the contact type.
+   * @param {String} destination The destination that will have its contact type computed.
+   * @returns {{ type: CONTACT_TYPE, destination: String }} The contact type that destination most likely uses or CONTACT_TYPE.UNKNOWN if unable to determine as type and the cleaned destination string.
+   */
+  getContactInfo(destination) {
+    if (
+      !destination ||
+      typeof destination !== 'string' ||
+      destination.length <= 0
+    ) {
+      return { type: this.CONTACT_TYPE.UNKNOWN, destination: '' };
+    }
+
+    // use loose checks (will return true with invalid phone numbers) to handle user input better
+    if (destination.replace(/\(|\)|\s|-/g, '').match(/^\+[1-9]\d{1,14}$/)) {
+      // phone number check
+      return {
+        type: this.CONTACT_TYPE.TEXT,
+        destination: destination.replace(/\(|\)|\s|-/g, ''),
+      };
+    } else if (destination.match(/^\S+@\S+$/g)) {
+      // email check
+      return { type: this.CONTACT_TYPE.EMAIL, destination: destination.trim() };
+    } else {
+      // no matching type found :/
+      return { type: this.CONTACT_TYPE.UNKNOWN, destination: '' };
     }
   }
 }
