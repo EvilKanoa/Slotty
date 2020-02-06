@@ -76,23 +76,17 @@ const config = {
   slotDataTtl: 0 /* seconds */,
 
   /**
-   * Defines what file should back the SQLite database depending on the mode of the app.
-   * It is highly recommended to use a file-based location for production so data persists
-   * accross app reboots (and crashes). When developing, it may be faster to simply use the
-   * in-memory option.
-   * @example
-   * // use a value of ':memory:' to use an in memory database
-   * { dev: ':memory:' }
-   * @example
-   * // alternatively, point it to a local file
-   * { prod: './slotty.db' }
+   * Defines what server should be used as the database for Slotty. Must be a PostgreSQL database.
+   * Supply a PostgreSQL connection string for each environment.
+   * While developing, you can use `yarn pg` to quickly spin up a PostgreSQL server in docker and `yarn stop` to kill it.
+   * Generally this value should be overridden through the use of environment variables to ensure you don't commit secrets.
    * @readonly
    * @constant
    * @type {{ dev: String, prod: String }}
    */
   db: {
-    dev: ':memory:',
-    prod: './slotty.db',
+    dev: 'postgresql://postgres:docker@localhost:5432/postgres',
+    prod: 'postgresql://postgres:docker@localhost:5432/postgres',
   },
 
   /**

@@ -13,13 +13,9 @@ For random questions you may have, take a look at the **FAQ** section.
 
 TODO
 
-#### Q: So what does each file do?
-
-TODO
-
 #### Q: How do you persist (store) data?
 
-Short answer: SQLite DB
+Short answer: PostgreSQL Database
 
 Long answer: TODO
 
@@ -31,9 +27,13 @@ Long answer: TODO
 
 #### Q: What framework is used on the backend?
 
-Short answer: None (libraries incl. `express` and `sqlite3`)
+Short answer: None (libraries used incl. `express` and `node-postgres`)
 
 Long answer: TODO
+
+## Configuration
+
+TODO
 
 ## Developing
 ### 1. Prerequisites

@@ -62,7 +62,7 @@ process.on('SIGINT', () => process.exit(2));
         institutionKey: 'UOG',
         courseKey: 'CIS*1500',
         termKey: 'W20',
-        contact: '+11111111111',
+        contact: '+12268686888',
         ...fields,
       }))
       .map(notification => db.createNotification(notification))

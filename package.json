@@ -10,7 +10,9 @@
   "scripts": {
     "start": "NODE_ENV=development nodemon backend/index.js",
     "prod": "NODE_ENV=production nodemon backend/index.js",
-    "lint": "prettier --write **/*.js"
+    "lint": "prettier --write **/*.js",
+    "pg": "docker run --rm --name pg-docker -e POSTGRES_PASSWORD=docker -e POSTGRES_USER=postgres -d -p 5432:5432 postgres",
+    "stop": "docker stop pg-docker"
   },
   "prettier": {
     "tabWidth": 2,
@@ -25,7 +27,7 @@
     "lodash": "^4.17.15",
     "morgan": "^1.9.1",
     "nodemon": "^2.0.2",
-    "sqlite3": "^4.1.1",
+    "pg": "^7.18.1",
     "statuses": "^1.5.0",
     "twilio": "^3.39.2"
   },

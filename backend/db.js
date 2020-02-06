@@ -1,10 +1,7 @@
 const _ = require('lodash');
+const { Pool } = require('pg');
 const config = require('../config');
 const utils = require('./utils');
-// enable verbose db logging when in dev mode
-const sqlite3 = config.isDev
-  ? require('sqlite3').verbose()
-  : require('sqlite3');
 
 /**
  * Notification entry that maps to the structure of notifications in the database.
@@ -110,96 +107,42 @@ const toActiveNotification = (data = {}, overrides = {}) => ({
  *
  * @param {Array<String>} literals The literals of the SQL statement.
  * @param {...any} values The values that must be inserted into the string.
- * @returns {[String, Array<any>]} Arguments that can be spread into the sqlite3 db functions.
+ * @returns {{ text: String, values: Array<any> }} Query object that can be passed to pg.
  */
-const sql = (literals, ...values) => {
-  // transform into data that is usable by sqlite3
-  const stmt = [
-    literals
-      .join('?')
-      .replace(/\s+/g, ' ')
-      .trim(),
-    values.map(val => (val instanceof Date ? utils.toUnixEpoch(val) : val)),
-  ];
+const sql = (literals, ...values) => ({
+  text: literals
+    .reduce(
+      ({ text, param }, literal) =>
+        text
+          ? {
+              text: `${text} $${param} ${literal}`,
+              param: param + 1,
+            }
+          : { text: literal, param },
+      { text: false, param: 1 }
+    )
+    .text.replace(/\s+/g, ' ')
+    .trim(),
+  values: values.map(val =>
+    val instanceof Date ? utils.toUnixEpoch(val) : val
+  ),
 
   // add a utility method that allows appending multiple sql strings
-  stmt.append = (literals, ...values) => {
-    // prefix the first literal with our original query
-    const mergedLiterals = [`${stmt[0]} ${literals[0]}`, ...literals.slice(1)];
+  append: (newLiterals, ...newValues) => {
+    // create the new literals by combining the lists and joining the last entry of original with first entry of new literals
+    const mergedLiterals = [
+      ...literals.slice(0, -1),
+      literals[literals.length - 1] + newLiterals[0],
+      ...newLiterals.slice(1),
+    ];
+
     // merge both list of values together
-    const mergedValues = [...stmt[1], ...values];
+    const mergedValues = [...values, ...newValues];
 
     // return the newly built query/statement
     return sql(mergedLiterals, ...mergedValues);
-  };
-
-  return stmt;
-};
-
-/**
- * Takes a created sqlite3 Database and binds async versions of db functions.
- * Bound functions include run, get, and all.
- * @example
- * // bind some database with async db functions
- * db = bindAsync(db);
- *
- * @example
- * // get a row
- * const row = await db.getAsync(sql`SELECT * FROM table WHERE column = ${value}`);
- * // or even
- * const { id, column, ...row } = await db.getAsync(...);
- *
- * @example
- * // create a new entry
- * const { lastID, changes } = await db.runAsync(sql`INSERT INTO table VALUES (...)`);
- *
- * @param {sqlite3.Database} db The database to bind async alternatives onto.
- * @returns {sqlite3.Database} The passed database with the async methods bound onto it.
- */
-const bindAsync = db => {
-  // the following functions can all be found in the same fashion
-  ['get', 'all'].forEach(fn => {
-    db[`${fn}Async`] = (...args) => {
-      // allow tagged sql strings to be passed without spread
-      const dbArgs = args.length === 1 ? args[0] : args;
-
-      // wrap the original call within a new promise
-      return new Promise((resolve, reject) =>
-        db[fn](...dbArgs, (err, res) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(res);
-          }
-        })
-      );
-    };
-  });
-
-  // need to add async run separately since it returns data through `this`
-  db.runAsync = (...args) => {
-    // allow tagged sql strings to be passed without spread
-    const dbArgs = args.length === 1 ? args[0] : args;
-
-    // wrap the original call within a new promise
-    return new Promise((resolve, reject) =>
-      // need to use old function syntax so `this` keyword is available
-      db.run(...dbArgs, function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(this);
-        }
-      })
-    );
-  };
-
-  // add indicator that the db object has bound functions added
-  db.asyncBound = true;
-
-  // return the bound db (since this method mutates the object, this may not be used)
-  return db;
-};
+  },
+});
 
 /**
  * Singleton class for working with a backing database.
@@ -207,10 +150,10 @@ const bindAsync = db => {
  */
 class DB {
   /**
-   * Internal database instance from sqlite3
-   * @type {sqlite3.Database}
+   * Internal database connection pool instance for running queries.
+   * @type {Pool}
    */
-  db = null;
+  pool = null;
 
   /**
    * Internal string used to connect to the sqlite3 database.
@@ -220,7 +163,7 @@ class DB {
 
   /**
    * Create a new database abstraction object for a given database.
-   * @param {String} connectionString The filename or indicator for the location of the database to back this instance.
+   * @param {String} connectionString The URI for the location of the database to back this instance.
    */
   constructor(connectionString) {
     this.connectionString = connectionString;
@@ -238,40 +181,70 @@ class DB {
       );
     }
 
-    // create the notifications table
-    await this.db.runAsync(sql`
-      CREATE TABLE IF NOT EXISTS notifications (
-        notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        last_run_id INTEGER,
-        access_key TEXT NOT NULL UNIQUE,
-        institution_key TEXT NOT NULL,
-        course_key TEXT NOT NULL,
-        section_key TEXT DEFAULT NULL,
-        term_key TEXT NOT NULL,
-        contact TEXT NOT NULL,
-        enabled BOOLEAN NOT NULL CHECK (enabled IN (0,1)) DEFAULT 1,
-        FOREIGN KEY (last_run_id)
-          REFERENCES runs (run_id)
-            ON DELETE SET NULL
-            ON UPDATE RESTRICT
-      )
-    `);
+    // use a specific client so we can create the tables with a transaction
+    const client = await this.pool.connect();
 
-    // create the run history table
-    await this.db.runAsync(sql`
-      CREATE TABLE IF NOT EXISTS runs (
-        run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        notification_id INTEGER NOT NULL,
-        error TEXT,
-        source_data TEXT,
-        timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        notification_sent BOOLEAN NOT NULL CHECK (notification_sent IN (0, 1)),
-        FOREIGN KEY (notification_id)
-          REFERENCES notifications (notification_id)
-            ON DELETE CASCADE
-            ON UPDATE CASCADE
-      )
-    `);
+    // perform all queries inside a try-catch-finally to manage the transaction
+    try {
+      await client.query(sql`BEGIN`);
+
+      // create the notifications table
+      await client.query(sql`
+        CREATE TABLE IF NOT EXISTS notifications (
+          notification_id SERIAL PRIMARY KEY,
+          last_run_id INTEGER,
+          access_key TEXT NOT NULL UNIQUE,
+          institution_key TEXT NOT NULL,
+          course_key TEXT NOT NULL,
+          section_key TEXT DEFAULT NULL,
+          term_key TEXT NOT NULL,
+          contact TEXT NOT NULL,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+      `);
+
+      // create the run history table
+      await client.query(sql`
+        CREATE TABLE IF NOT EXISTS runs (
+          run_id SERIAL PRIMARY KEY,
+          notification_id INTEGER NOT NULL,
+          error TEXT,
+          source_data TEXT,
+          timestamp INTEGER NOT NULL,
+          notification_sent BOOLEAN NOT NULL,
+          FOREIGN KEY (notification_id)
+            REFERENCES notifications (notification_id)
+              ON DELETE CASCADE
+              ON UPDATE CASCADE
+        )
+      `);
+
+      // remove fk constraint if the database already was created
+      await client.query(sql`
+        ALTER TABLE notifications
+        DROP CONSTRAINT IF EXISTS
+          notifications_last_run_id_fkey
+      `);
+
+      // add the foreign key constraint to the notifications table
+      await client.query(sql`
+        ALTER TABLE notifications
+        ADD CONSTRAINT notifications_last_run_id_fkey
+          FOREIGN KEY (last_run_id)
+            REFERENCES runs (run_id)
+              ON DELETE SET NULL
+              ON UPDATE RESTRICT
+      `);
+
+      await client.query(sql`COMMIT`);
+    } catch (e) {
+      // if an error was encountered, rollback changes and rethrow error
+      await client.query(sql`ROLLBACK`);
+      throw e;
+    } finally {
+      // need to release the client when we're done
+      client.release();
+    }
   }
 
   /**
@@ -279,7 +252,7 @@ class DB {
    * @returns {Boolean} Whether the database has been opened.
    */
   get isOpen() {
-    return this.db && this.db.open;
+    return !!this.pool;
   }
 
   /**
@@ -292,36 +265,15 @@ class DB {
       return this;
     }
 
-    // create a new promise to wrap the sqlite3 open functions
-    return new Promise((resolve, reject) => {
-      // attempt to open the database specified by connectionString
-      this.db = new sqlite3.Database(
-        this.connectionString,
-        sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
-        err => {
-          if (err) {
-            console.error(
-              `Failed to open a connection to the database at '${this.connectionString}'`,
-              err
-            );
-            reject(err);
-          } else {
-            // add async functions to the db object
-            bindAsync(this.db);
+    // create a new pg pool to use for connections
+    this.pool = new Pool({ connectionString: this.connectionString });
 
-            // initialize our database
-            this.initialize()
-              .then(() => {
-                console.log(
-                  `Connected to database at '${this.connectionString}'`
-                );
-                resolve(this);
-              })
-              .catch(reject);
-          }
-        }
-      );
-    });
+    // initialize the database with the correct tables
+    await this.initialize();
+    console.log(`Connected to database at '${this.connectionString}'`);
+
+    // return self for easy chaining
+    return this;
   }
 
   /**
@@ -334,24 +286,9 @@ class DB {
       return;
     }
 
-    // create a new promise to wrap the sqlite3 close functions
-    return new Promise((resolve, reject) => {
-      this.db.close(err => {
-        if (err) {
-          console.error(
-            `Failed to close database connection from '${this.connectionString}'`,
-            err
-          );
-          reject(err);
-        } else {
-          this.db = null;
-          console.log(
-            `Closed database connection from '${this.connectionString}'`
-          );
-          resolve();
-        }
-      });
-    });
+    // close the connection pool which will close and end all connections to the db
+    await this.pool.end();
+    console.log(`Closed database connection from '${this.connectionString}'`);
   }
 
   /**
@@ -378,38 +315,26 @@ class DB {
     let result = undefined;
     do {
       accessKey = utils.generateAccessKey();
-      result = await this.db.getAsync(sql`
+      result = await this.pool.query(sql`
         SELECT notification_id id FROM notifications WHERE access_key = ${accessKey}
       `);
-    } while (result !== undefined);
+    } while (result.rows.length > 0);
 
     // create the new notification
-    const data = await this.db.runAsync(sql`
+    const data = await this.pool.query(sql`
       INSERT INTO notifications(access_key, institution_key, course_key, section_key, term_key, contact, enabled)
       VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${sectionKey}, ${termKey}, ${contact}, ${!!enabled})
+      RETURNING *
     `);
 
     // return the new notification if it was inserted correctly
-    if (!data || data.changes <= 0) {
+    if (!data || data.rows.length <= 0) {
       throw new Error(
         'Failed to insert new notification in database with key: ',
         accessKey
       );
     } else {
-      return toNotification(
-        {
-          notification_id: data.lastID,
-        },
-        {
-          accessKey,
-          institutionKey,
-          courseKey,
-          sectionKey,
-          termKey,
-          contact,
-          enabled: !!enabled,
-        }
-      );
+      return toNotification(data.rows[0]);
     }
   }
 
@@ -468,14 +393,17 @@ class DB {
       query = query.append`WHERE access_key = ${notification.accessKey}`;
     }
 
+    // return all data from update
+    query = query.append`RETURNING *`;
+
     // execute the query
-    const result = await this.db.runAsync(query);
+    const result = await this.pool.query(query);
 
     // check if the update succeeded and if so, return the updated notification fields + the id
-    if (!result || result.changes < 1) {
+    if (!result || result.rows.length <= 0) {
       return undefined;
     } else {
-      return toNotification({ notification_id: result.lastID }, notification);
+      return toNotification(result.rows[0]);
     }
   }
 
@@ -503,13 +431,13 @@ class DB {
     } else {
       query = query.append`WHERE access_key = ${idOrAccessKey.accessKey}`;
     }
-    const data = await this.db.getAsync(query.append`LIMIT 1`);
+    const data = await this.pool.query(query.append`LIMIT 1`);
 
     // if notification not found, return undefined
-    if (!data) {
+    if (!data || data.rows.length <= 0) {
       return undefined;
     } else {
-      return toNotification(data);
+      return toNotification(data.rows[0]);
     }
   }
 
@@ -539,14 +467,17 @@ class DB {
       );
     }
 
+    // TODO: Convert this crazy thing to a database transaction
+
     // create the new run
-    const data = await this.db.runAsync(sql`
+    const data = await this.pool.query(sql`
       INSERT INTO runs(notification_id, error, source_data, timestamp, notification_sent)
       VALUES (${myNotificationId}, ${error}, ${sourceData}, ${timestamp}, ${!!notificationSent})
+      RETURNING *
     `);
 
     // ensure the new run was inserted correctly
-    if (!data || data.changes <= 0) {
+    if (!data || data.rows.length <= 0) {
       throw new Error('Failed to insert new run in database');
     }
 
@@ -554,8 +485,8 @@ class DB {
     let notificationUpdate = undefined;
     let notificationErr = undefined;
     try {
-      notificationUpdate = await this.db.runAsync(
-        sql`UPDATE notifications SET last_run_id = ${data.lastID} WHERE notification_id = ${myNotificationId}`
+      notificationUpdate = await this.pool.query(
+        sql`UPDATE notifications SET last_run_id = ${data.rows[0].run_id} WHERE notification_id = ${myNotificationId}`
       );
     } catch (err) {
       notificationErr = err;
@@ -565,12 +496,12 @@ class DB {
     if (
       notificationErr ||
       !notificationUpdate ||
-      notificationUpdate.changes <= 0
+      notificationUpdate.rowCount <= 0
     ) {
       // remove the run if we were unable to update the notification
       try {
-        await this.db.runAsync(
-          sql`DELETE FROM runs WHERE run_id = ${data.lastID}`
+        await this.pool.query(
+          sql`DELETE FROM runs WHERE run_id = ${data.rows[0].run_id}`
         );
       } catch (err) {
         console.warn(err);
@@ -586,16 +517,7 @@ class DB {
       }
     } else {
       // if all went well, return the newly created run
-      return toRun(
-        { run_id: data.lastID },
-        {
-          notificationId,
-          error,
-          sourceData,
-          timestamp,
-          notificationSent: !!notificationSent,
-        }
-      );
+      return toRun(data.rows[0]);
     }
   }
 
@@ -611,12 +533,12 @@ class DB {
     }
 
     // try to find a matching run in the database
-    const data = await this.db.getAsync(sql`
+    const data = await this.pool.query(sql`
       SELECT * FROM runs WHERE run_id = ${runId} LIMIT 1
     `);
 
     // if run not found, return undefined
-    if (!data) {
+    if (!data || data.rows.length <= 0) {
       return undefined;
     } else {
       return toRun(data);
@@ -667,8 +589,12 @@ class DB {
     }
 
     // execute the query and return the transformed data
-    const data = (await this.db.allAsync(query)) || [];
-    return data.map(toRun);
+    const data = await this.pool.query(query);
+    if (!data || data.rows.length <= 0) {
+      return [];
+    } else {
+      return data.rows.map(toRun);
+    }
   }
 
   /**
@@ -692,25 +618,31 @@ class DB {
 
     // start by building the query explicitly
     // we need to explicitly select the `notification_id` from the notification so if a run is missing, we don't get null
-    const query = sql`
+    let query = sql`
       SELECT *, notifications.notification_id FROM notifications
       LEFT JOIN runs
       ON notifications.last_run_id = runs.run_id
       WHERE
         (
           notifications.last_run_id IS NULL OR
-          datetime(runs.timestamp, 'unixepoch', ${ttl}) < datetime('now')
+          runs.timestamp < ${utils.toUnixEpoch(new Date()) - effectiveTtl}
         ) AND
         notifications.enabled = ${true}
       ORDER BY runs.timestamp ASC
-      LIMIT ${limit}
     `;
 
-    // execute the query
-    const data = (await this.db.allAsync(query)) || [];
+    // add a limit if required
+    if (limit >= 0) {
+      query = query.append`LIMIT ${limit}`;
+    }
 
-    // transform and return the data
-    return data.map(toActiveNotification);
+    // execute the query and return the transformed data
+    const data = await this.pool.query(query);
+    if (!data || data.rows.length <= 0) {
+      return [];
+    } else {
+      return data.rows.map(toActiveNotification);
+    }
   }
 }
 
