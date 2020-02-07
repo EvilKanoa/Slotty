@@ -132,7 +132,7 @@ const sql = (literals, ...values) => ({
     // create the new literals by combining the lists and joining the last entry of original with first entry of new literals
     const mergedLiterals = [
       ...literals.slice(0, -1),
-      literals[literals.length - 1] + newLiterals[0],
+      `${literals[literals.length - 1]} ${newLiterals[0]}`,
       ...newLiterals.slice(1),
     ];
 
@@ -316,7 +316,7 @@ class DB {
     do {
       accessKey = utils.generateAccessKey();
       result = await this.pool.query(sql`
-        SELECT notification_id id FROM notifications WHERE access_key = ${accessKey}
+        SELECT notification_id FROM notifications WHERE access_key = ${accessKey}
       `);
     } while (result.rows.length > 0);
 
@@ -612,9 +612,6 @@ class DB {
         'The effective TTL must be a number with a value of 0 or greater'
       );
     }
-
-    // convert our effective TTL into an offset string that sqlite can understand
-    const ttl = `+${effectiveTtl} seconds`;
 
     // start by building the query explicitly
     // we need to explicitly select the `notification_id` from the notification so if a run is missing, we don't get null
