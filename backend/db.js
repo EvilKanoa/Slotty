@@ -541,7 +541,7 @@ class DB {
     if (!data || data.rows.length <= 0) {
       return undefined;
     } else {
-      return toRun(data);
+      return toRun(data.rows[0]);
     }
   }
 

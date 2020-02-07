@@ -562,6 +562,123 @@ const notificationRoutes = app => {
 };
 
 /**
+ * @swagger
+ *
+ * /runs/{runId}:
+ *   get:
+ *     summary: Look up an individual run of a notification by its ID.
+ *     description: Attempts to retrieve the run with the ID specified. You can retrieve a run for any notification as long as you supply a valid run ID.
+ *     tags:
+ *       - Runs
+ *     parameters:
+ *       - in: path
+ *         name: runId
+ *         description: The run ID used to specify a run.
+ *         type: integer
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: A run with the given ID was found and returned successfully.
+ *         schema:
+ *           $ref: '#/definitions/Run'
+ *       400:
+ *         description: The server was unable to determine what run ID was specified in the request.
+ *         schema:
+ *           $ref: '#/definitions/Error'
+ *         examples:
+ *           application/json:
+ *             status: 400
+ *             message: The run ID must be a valid positive integer
+ *       404:
+ *         $ref: '#/responses/NotFoundError'
+ *
+ * /runs/list/{accessKey}/{limit}:
+ *   get:
+ *     summary: Get a list of runs given a notification access key.
+ *     description: Retrieves a list of all runs belonging to the notification that was specified by access key. If a limit option is given, the list will be limited to a maximum of the specified limit. If no runs found, either when the notification has had no runs, or the notification access key does not belong to a real notification, an empty list is returned.
+ *     tags:
+ *       - Runs
+ *     parameters:
+ *       - in: path
+ *         name: accessKey
+ *         description: The identifier to use when finding a notification.
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: limit
+ *         description: Enforce a limit on the maximum number of runs returned. Can be unset or set to -1 to indicate no limit should be used.
+ *         required: false
+ *         default: -1
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Array of runs found belonging to the notification specified. If no runs or no notification found, this will be an empty array.
+ *         schema:
+ *           type: array
+ *           items:
+ *             $ref: '#/definitions/Run'
+ *       400:
+ *         $ref: '#/responses/BadRequestAccessKeyError'
+ */
+/**
+ * Attaches run-specific API routes to an express app instance.
+ * @param {express} app Express app instance to attach run API routes too.
+ * @returns {undefined}
+ */
+const runRoutes = app => {
+  // get a single run by id
+  app.get(apiUrl('runs/:runId'), withErrors(async (req, res) => {
+    const runId = parseInt(req.params.runId, 10);
+
+    // check that a valid run ID was given
+    if (!runId || isNaN(runId) || runId <= 0) {
+      throw new HTTPError(
+        400,
+        'The run ID must be a valid positive integer'
+      );
+    }
+
+    // try to find the run
+    const run = await db.getRun(runId);
+
+    // check if we found a run or not and send the correct response
+    if (!run) {
+      throw new HTTPError(404);
+    } else {
+      return res.status(200).json(run);
+    }
+  }));
+
+  // get a list of runs by notification id or access key
+  app.get(apiUrl('runs/list/:accessKey/:limit?'), withErrors(async (req, res) => {
+    const { accessKey } = req.params;
+    const limit = parseInt(req.params.limit || '-1', 10);
+
+    // check that a valid access key was given
+    if (
+      !accessKey ||
+      typeof accessKey !== 'string' ||
+      accessKey.length <= 0
+    ) {
+      throw new HTTPError(
+        400,
+        'Access key must be a valid, non-empty string'
+      );
+    } else if (isNaN(limit)) {
+      throw new HTTPError(400, 'The limit value must be an integer value');
+    }
+
+    // try to perform the run listing using our parameters
+    const runs = await db.getRuns({ accessKey }, limit);
+
+    // since not found requests simply return an empty list, we can return runs in all cases
+    res.status(200).json(runs);
+  }));
+};
+
+/**
  * Attaches the API routes to an express app instance
  * @param {express} app Express app instance to attach API routes too.
  * @returns {undefined}
@@ -570,7 +687,9 @@ const apiRoutes = app => {
   // redirect root of API routes to docs
   app.get(apiUrl(), (_req, res) => res.redirect(apiUrl('docs')));
 
+  // register API routes for each resource
   notificationRoutes(app);
+  runRoutes(app);
 };
 
 module.exports = app => {
