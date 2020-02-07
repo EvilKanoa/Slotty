@@ -23,8 +23,8 @@ const utils = require('./utils');
  * @typedef {Object} NotificationRun
  * @property {Number} id The internal identifier of this run.
  * @property {Number} notificationId The internal identifier of the notification that triggered this run.
- * @property {String} error If any error occurred during this run, this field is populated with it.
- * @property {String} sourceData Optional string containing the data used to trigger this run.
+ * @property {(String|undefined)} error If any error occurred during this run, this field is populated with it.
+ * @property {(String|undefined)} sourceData Optional string containing the data used to trigger this run.
  * @property {Date} timestamp When the run was executed.
  * @property {Boolean} notificationSent Whether a notification was sent as a result of this run or previous runs with the same slots.
  *                                      This should be set to false when the course is closed up again.

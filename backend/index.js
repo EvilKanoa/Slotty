@@ -25,9 +25,12 @@ process.on('SIGINT', () => process.exit(2));
   // create a new express app
   const app = require('express')();
 
-  // register middleware and routes for express app
+  // register middleware for app
   app.use(require('morgan')(config.logFormat));
   app.use(require('body-parser').json({ type: '*/*' })); // assume all bodies are JSON
+
+  // register routes for app
+  require('./docs')(app);
   require('./routes')(app);
 
   // connect to the database
@@ -62,7 +65,7 @@ process.on('SIGINT', () => process.exit(2));
         institutionKey: 'UOG',
         courseKey: 'CIS*1500',
         termKey: 'W20',
-        contact: '+12268686888',
+        contact: '+111111111',
         ...fields,
       }))
       .map(notification => db.createNotification(notification))

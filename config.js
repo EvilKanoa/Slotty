@@ -38,6 +38,14 @@ const config = {
   webadvisorApi: 'https://webadvisor-api.herokuapp.com/graphql',
 
   /**
+   * Defines the base URL prefix to use for API routes.
+   * @readonly
+   * @constant
+   * @type {String}
+   */
+  apiBaseUrl: '/api',
+
+  /**
    * Defines the format to tell morgan to use when logging requests.
    * @see https://github.com/expressjs/morgan#readme
    * @readonly

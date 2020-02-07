@@ -1,7 +1,215 @@
 const express = require('express');
 const statuses = require('statuses');
 const db = require('./db');
+const { apiUrl } = require('./utils');
 const config = require('../config');
+
+/**
+ * @swagger
+ *
+ * tags:
+ *   - name: Notifications
+ *     description: Access to notifications.
+ *
+ *   - name: Runs
+ *     description: Access to all runs for all notifications.
+ *
+ * definitions:
+ *   Notification:
+ *     description: The complete notification object for a given notification.
+ *     type: object
+ *     required:
+ *       - institutionKey
+ *       - courseKey
+ *       - termKey
+ *       - contact
+ *     properties:
+ *       id:
+ *         type: integer
+ *         description: The internal identifier of this notification. Use to reference runs of this notification.
+ *       accessKey:
+ *         type: string
+ *         description: The external unique identifier of this notification. Can be used to look up a notification.
+ *       lastRunId:
+ *         type: integer
+ *         nullable: true
+ *         description: The ID of the last valid run that occurred for this notification.
+ *       institutionKey:
+ *         type: string
+ *         description: The key used to determine which institution the course is at, should match the key used on webadvisor-api.
+ *       courseKey:
+ *         type: string
+ *         description: The course code that this notification is based upon, should not include the section (e.g. CIS*1500 not CIS*1500*011).
+ *       sectionKey:
+ *         type: string
+ *         nullable: true
+ *         description: If undefined, notification is sent for any open section, otherwise, matches the section or meeting with the same key (dependent on institution).
+ *       termKey:
+ *         type: string
+ *         description: The key used to determine which term the course occurs within (e.g. F19, W22, ect).
+ *       contact:
+ *         type: string
+ *         description: The contact method used to send the notification.
+ *       enabled:
+ *         type: boolean
+ *         default: true
+ *         description: Whether this notification is currently enabled.
+ *     example:
+ *       id: 1234
+ *       lastRunId: 12345678
+ *       accessKey: a1b2c3
+ *       institutionKey: UOG
+ *       courseKey: MATH*1200
+ *       sectionKey: '0101'
+ *       termKey: F22
+ *       contact: '+10001112222'
+ *       enabled: true
+ *
+ *   PartialNotification:
+ *     description: A subset of the Notification model only containing the properties that a user is allowed to change.
+ *     type: object
+ *     properties:
+ *       institutionKey:
+ *         type: string
+ *         description: The key used to determine which institution the course is at, should match the key used on webadvisor-api.
+ *       courseKey:
+ *         type: string
+ *         description: The course code that this notification is based upon, should not include the section (e.g. CIS*1500 not CIS*1500*011).
+ *       sectionKey:
+ *         type: string
+ *         nullable: true
+ *         description: If undefined, notification is sent for any open section, otherwise, matches the section or meeting with the same key (dependent on institution).
+ *       termKey:
+ *         type: string
+ *         description: The key used to determine which term the course occurs within (e.g. F19, W22, ect).
+ *       contact:
+ *         type: string
+ *         description: The contact method used to send the notification.
+ *       enabled:
+ *         type: boolean
+ *         default: true
+ *         description: Whether this notification is currently enabled.
+ *     example:
+ *       institutionKey: UOG
+ *       courseKey: MATH*1200
+ *       sectionKey: '0101'
+ *       termKey: F22
+ *       contact: '+10001112222'
+ *       enabled: true
+ *
+ *   NewNotification:
+ *     description: A subset of the Notification model properties that are used during creation of new notifications.
+ *     type: object
+ *     required:
+ *       - institutionKey
+ *       - courseKey
+ *       - termKey
+ *       - contact
+ *     properties:
+ *       institutionKey:
+ *         type: string
+ *         description: The key used to determine which institution the course is at, should match the key used on webadvisor-api.
+ *       courseKey:
+ *         type: string
+ *         description: The course code that this notification is based upon, should not include the section (e.g. CIS*1500 not CIS*1500*011).
+ *       sectionKey:
+ *         type: string
+ *         nullable: true
+ *         description: If undefined, notification is sent for any open section, otherwise, matches the section or meeting with the same key (dependent on institution).
+ *       termKey:
+ *         type: string
+ *         description: The key used to determine which term the course occurs within (e.g. F19, W22, ect).
+ *       contact:
+ *         type: string
+ *         description: The contact method used to send the notification.
+ *       enabled:
+ *         type: boolean
+ *         default: true
+ *         description: Whether this notification is currently enabled.
+ *     example:
+ *       institutionKey: UOG
+ *       courseKey: MATH*1200
+ *       termKey: F22
+ *       contact: '+10001112222'
+ *
+ *   Run:
+ *     type: object
+ *     required:
+ *       - notificationId
+ *       - timestamp
+ *       - notificationSent
+ *     properties:
+ *       id:
+ *         type: integer
+ *         description: The internal identifier of this run.
+ *       notificationId:
+ *         type: integer
+ *         description: The internal identifier of the notification that triggered this run.
+ *       error:
+ *         type: string
+ *         nullable: true
+ *         description: If any error occurred during this run, this field is populated with it.
+ *       sourceData:
+ *         type: string
+ *         nullable: true
+ *         description: Optional string containing the data used to trigger this run.
+ *       timestamp:
+ *         type: string
+ *         format: date-time
+ *         description: When the run was executed.
+ *       notificationSent:
+ *         type: boolean
+ *         description: >
+ *           Whether a notification was sent as a result of this run or previous runs with the same slots.
+ *           This should be set to false when the course is closed up again.
+ *     example:
+ *       id: 123456
+ *       notificationId: 1234
+ *       error: null
+ *       sourceData: '{ data: { course: { sections: [] } } }'
+ *       timestamp: '2020-02-07T18:29:41Z'
+ *       notificationSent: false
+ *
+ *   Error:
+ *     type: object
+ *     required:
+ *       - status
+ *       - message
+ *     properties:
+ *       status:
+ *         type: integer
+ *         minimum: 100
+ *         maximum: 599
+ *       message:
+ *         type: string
+ *
+ * responses:
+ *   NotFoundError:
+ *     description: The specified resource was not found.
+ *     schema:
+ *       $ref: '#/definitions/Error'
+ *     examples:
+ *       application/json:
+ *         status: 404
+ *         message: Not Found
+ *
+ *   BadRequestAccessKeyError:
+ *     description: The server was unable to determine what access key was specified.
+ *     schema:
+ *       $ref: '#/definitions/Error'
+ *     examples:
+ *       application/json:
+ *         status: 400
+ *         message: Access key must be a valid, non-empty string
+ *
+ * parameters:
+ *   accessKey:
+ *     name: accessKey
+ *     in: path
+ *     description: The access key used to specify a notification.
+ *     type: string
+ *     required: true
+ */
 
 /**
  * Represents an error which can be sent as a HTTP error.
@@ -92,17 +300,105 @@ const withErrors = handler => (req, res, next) =>
   handler(req, res, next).catch(next);
 
 /**
+ * @swagger
+ *
+ * /notifications/{accessKey}:
+ *   parameters:
+ *     - $ref: '#/parameters/accessKey'
+ *
+ *   get:
+ *     summary: Look up a notification using an access key.
+ *     description: Attempts to retrieve all notification data for some notification based upon the access key. Note that the access key is case sensitive.
+ *     tags:
+ *       - Notifications
+ *     responses:
+ *       200:
+ *         description: A notification with the given access key was found and returned successfully.
+ *         schema:
+ *           $ref: '#/definitions/Notification'
+ *       400:
+ *         $ref: '#/responses/BadRequestAccessKeyError'
+ *       404:
+ *         $ref: '#/responses/NotFoundError'
+ *
+ *   put:
+ *     summary: Update a notification using an access key to identify it.
+ *     description: Performs a partial update of a specific notification. All parameters set in the request will be set on the notification if possible. You must provide an access key. You cannot update a notification's ID or access key.
+ *     tags:
+ *       - Notifications
+ *     parameters:
+ *       - in: body
+ *         name: notification
+ *         description: The set of properties to update for the notification specified by the access key.
+ *         required: true
+ *         schema:
+ *           $ref: '#/definitions/PartialNotification'
+ *     responses:
+ *       200:
+ *         description: A notification with the given access key was found and updated with the new properties successfully.
+ *         schema:
+ *           $ref: '#/definitions/Notification'
+ *       400:
+ *         $ref: '#/responses/BadRequestAccessKeyError'
+ *       404:
+ *         $ref: '#/responses/NotFoundError'
+ *
+ *   delete:
+ *     summary: Disable a given notification using an access key.
+ *     description: Sets the enabled property of a given notification to false. Performs the same action as a PUT with a body specifying only an access key and enabled set to false.
+ *     tags:
+ *       - Notifications
+ *     responses:
+ *       200:
+ *         description: A notification with the given access key was found and set to disabled successfully.
+ *         schema:
+ *           $ref: '#/definitions/Notification'
+ *       400:
+ *         $ref: '#/responses/BadRequestAccessKeyError'
+ *       404:
+ *         $ref: '#/responses/NotFoundError'
+ *
+ * /notifications:
+ *   post:
+ *     summary: Create a new notification from the information given.
+ *     description: Creates a new notification based upon the body of the request. A new access key will be automatically generated for the notification. If enabled was not false, then the notification will be active immediately.
+ *     tags:
+ *       - Notifications
+ *     parameters:
+ *       - in: body
+ *         name: notification
+ *         description: >
+ *           The new notification to create. Note that the following fields normally found on notifications are disallowed during creation: id, accessKey, and lastRunId.
+ *         required: true
+ *         schema:
+ *           $ref: '#/definitions/NewNotification'
+ *     responses:
+ *       201:
+ *         description: A new notification was created with the provided properties successfully.
+ *         schema:
+ *           $ref: '#/definitions/Notification'
+ *       400:
+ *         description: The parameters of the request are not valid and thus no action may be performed.
+ *         schema:
+ *           $ref: '#/definitions/Error'
+ *         examples:
+ *           application/json:
+ *             status: 400
+ *             message: >
+ *               The notification object supplied has extra fields that are disallowed: id, accessKey
+ */
+/**
  * Attaches notification-specific API routes to an express app instance.
  * @param {express} app Express app instance to attach notification API routes too.
  * @returns {undefined}
  */
 const notificationRoutes = app => {
   // method not allowed when getting notification list
-  app.get('/api/notifications', denyRoute(405));
+  app.get(apiUrl('notifications'), denyRoute(405));
 
   // get notification by access key
   app.get(
-    '/api/notifications/:accessKey',
+    apiUrl('notifications/:accessKey'),
     withErrors(async (req, res) => {
       const { accessKey } = req.params;
 
@@ -132,7 +428,7 @@ const notificationRoutes = app => {
 
   // create a new notification
   app.post(
-    '/api/notifications',
+    apiUrl('notifications'),
     withErrors(async (req, res) => {
       const data = req.body || {};
       const requiredFields = [
@@ -141,7 +437,7 @@ const notificationRoutes = app => {
         'termKey',
         'contact',
       ];
-      const optionalFields = ['enabled'];
+      const optionalFields = ['sectionKey', 'enabled'];
 
       // determine missing and extra fields
       const missingFields = requiredFields.filter(
@@ -182,11 +478,38 @@ const notificationRoutes = app => {
   );
 
   // don't allow new notifications to be created with IDs (409 conflict)
-  app.post('/api/notifications/:notificationId', denyRoute(409));
+  app.post(apiUrl('notifications/:notificationId'), denyRoute(409));
+
+  // disable a notification
+  app.delete(apiUrl('notifications/:accessKey'), withErrors(async (req, res) => {
+    const { accessKey } = req.params;
+
+    // check that a valid access key was given
+    if (
+      !accessKey ||
+      typeof accessKey !== 'string' ||
+      accessKey.length <= 0
+    ) {
+      throw new HTTPError(
+        400,
+        'Access key must be a valid, non-empty string'
+      );
+    }
+
+    // try to find and disable the notification
+    const notification = await db.updateNotification({ accessKey, enabled: false });
+
+    // check if we failed to find a notification and throw an error if so, otherwise return the updated notification
+    if (!notification || notification.accessKey !== accessKey) {
+      throw new HTTPError(404);
+    } else {
+      return res.status(200).json(notification);
+    }
+  }))
 
   // update a notification
   app.put(
-    '/api/notifications/:accessKey',
+    apiUrl('notifications/:accessKey'),
     withErrors(async (req, res) => {
       const data = req.body || {};
       const { accessKey } = req.params;
@@ -208,6 +531,7 @@ const notificationRoutes = app => {
         'institutionKey',
         'courseKey',
         'termKey',
+        'sectionKey',
         'contact',
         'enabled',
       ];
@@ -224,12 +548,11 @@ const notificationRoutes = app => {
       }
 
       // attempt to update the notification with the specified ID
-      const result = await db.updateNotification({ accessKey, ...data });
+      const notification = await db.updateNotification({ accessKey, ...data });
 
       // return the notification if it was updated successfully
-      if (result) {
-        const notification = await db.getNotification(result);
-        return res.status(200).json(notification || result);
+      if (notification) {
+        return res.status(200).json(notification);
       } else {
         // if no notification was returned then assume no notification was found
         throw new HTTPError(404);
@@ -244,6 +567,9 @@ const notificationRoutes = app => {
  * @returns {undefined}
  */
 const apiRoutes = app => {
+  // redirect root of API routes to docs
+  app.get(apiUrl(), (_req, res) => res.redirect(apiUrl('docs')));
+
   notificationRoutes(app);
 };
 

@@ -1,3 +1,12 @@
+// need to lazy load the config to prevent circular requires
+let _config = undefined;
+
+/**
+ * Gets the config object. Will require(...) the config if it has not yet been required.
+ * @returns {Object} The config object.
+ */
+const config = () => _config || (_config = require('../config'));
+
 const utils = (module.exports = {
   /**
    * Generates a new random access key of the specified length.
@@ -111,4 +120,17 @@ const utils = (module.exports = {
    * @returns {Number} The number of seconds since the unix epoch.
    */
   toUnixEpoch: dateLike => Math.floor(new Date(dateLike).valueOf() / 1000),
+
+  /**
+   * Generates the correct API URL to use for a given resource string.
+   * Prepends the config.apiBaseUrl value to the resource string.
+   * Do not include the leading slash ('/') for the resource.
+   * If no resource string is given, returns the API base URL.
+   * @param {(String|undefined)} resource The string identifying the resource in question when generating a URL.
+   * @returns {String} The complete URL of the resource to be used when registering route handlers.
+   */
+  apiUrl: resource =>
+    resource && resource.length
+      ? `${config().apiBaseUrl}/${resource}`
+      : config().apiBaseUrl,
 });
