@@ -4,22 +4,18 @@ const utils = require('./server/utils');
 // load environment variables
 require('dotenv').config();
 
-// allow alternatively keys to be used from environment variables
+/**
+ * Allows alternative keys to be used for environment variables.
+ * This lets Slotty use the key name it wants while allowing it to accept different key names for the same setting in different environments.
+ * @readonly
+ * @type {Object}
+ */
 const aliases = {
   DATABASE: 'DB_PROD',
   POSTGRES: 'DB_PROD',
   DATABASE_URL: 'DB_PROD',
   POSTGRES_URL: 'DB_PROD',
 };
-
-// apply the aliases to the process env
-Object.keys(aliases)
-  // only include aliases that are used in the current env
-  .filter(alias => process.env.hasOwnProperty(alias))
-  // don't override values set by their primary key
-  .filter(alias => !process.env.hasOwnProperty(aliases[alias]))
-  // apply each valid alias
-  .forEach(alias => (process.env[aliases[alias]] = process.env[alias]));
 
 /**
  * Define the default options and types of the configuration.
@@ -98,7 +94,7 @@ const config = {
    * @constant
    * @type {Number}
    */
-  slotDataTtl: 0 /* seconds */,
+  slotDataTtl: 60 /* seconds */,
 
   /**
    * Defines what server should be used as the database for Slotty. Must be a PostgreSQL database.
@@ -153,6 +149,17 @@ We wish you luck, register fast!
 (Visit $app to disable this notification using the above access key.)
 `.trim(),
 };
+
+/** EVERYTHING BELOW THIS POINT IS FOR CONFIG SETUP, DO NOT CHANGE. */
+
+// apply the aliases to the process env
+Object.keys(aliases)
+  // only include aliases that are used in the current env
+  .filter(alias => process.env.hasOwnProperty(alias))
+  // don't override values set by their primary key
+  .filter(alias => !process.env.hasOwnProperty(aliases[alias]))
+  // apply each valid alias
+  .forEach(alias => (process.env[aliases[alias]] = process.env[alias]));
 
 /**
  * Defines all custom user set values that override the config defaults.
