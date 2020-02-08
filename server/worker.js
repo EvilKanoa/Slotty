@@ -156,12 +156,7 @@ class Worker {
     // this function handles step 4 from above, it will perform actions on an individual notification basis
     const performSingleCheck = async (notification, data) => {
       // ensure the notification is enabled and course data is present
-      if (
-        !notification.enabled ||
-        !data ||
-        !data.course ||
-        !data.course.sections
-      ) {
+      if (!notification.enabled || !data || !data.course || !data.course.sections) {
         console.error('Unable to perform action with insufficient data', {
           notification,
           data,
@@ -174,8 +169,7 @@ class Worker {
       const event = {};
 
       // contains the cleaned section or meeting key
-      const key =
-        notification.sectionKey && notification.sectionKey.toLowerCase().trim();
+      const key = notification.sectionKey && notification.sectionKey.toLowerCase().trim();
       // contains the data used to trigger this run
       const sourceData = JSON.stringify(data);
 
@@ -183,9 +177,7 @@ class Worker {
       if (key && key.length) {
         // convert to a list of sections and meetings combined, section key can refer to a specific section or specific meeting
         const section = data.course.sections
-          .concat(
-            data.course.sections.flatMap(({ meetings }) => meetings || [])
-          )
+          .concat(data.course.sections.flatMap(({ meetings }) => meetings || []))
           .filter(
             ({ id, available, capacity }) =>
               id && id.length && available != null && capacity != null
@@ -237,9 +229,7 @@ class Worker {
         let error = undefined; // holds an error message if needed
 
         // attempt to send a notification message and capture any error that occurs
-        await notifier
-          .sendNotification(notification, event)
-          .catch(err => (error = err));
+        await notifier.sendNotification(notification, event).catch(err => (error = err));
 
         // log run in db
         await db.createRun(
@@ -281,19 +271,17 @@ class Worker {
       .map(async variables => {
         // make the fetch request for an individual course (course, institution, and term are variables)
         // this request is step 3 from above
-        const data = await this.gql
-          .request(slotsQuery, variables)
-          .catch(err => {
-            // output any graphql errors that occur
-            console.log(
-              'Encountered error while fetching slot data using variables: ',
-              variables
-            );
-            console.error(err.response.errors || err || 'No error reported');
+        const data = await this.gql.request(slotsQuery, variables).catch(err => {
+          // output any graphql errors that occur
+          console.log(
+            'Encountered error while fetching slot data using variables: ',
+            variables
+          );
+          console.error(err.response.errors || err || 'No error reported');
 
-            // return a falsey value so we are aware that an issue has occurred
-            return undefined;
-          });
+          // return a falsey value so we are aware that an issue has occurred
+          return undefined;
+        });
 
         // exit early if an error occurred
         if (!data) {
@@ -319,7 +307,10 @@ class Worker {
               .catch(err => {
                 console.log(
                   'Encountered error while performing action on a notification',
-                  { notification, data }
+                  {
+                    notification,
+                    data,
+                  }
                 );
                 console.error(err);
 

@@ -280,8 +280,7 @@ const errorHandler = (err, _req, res, next) => {
  * @param {Number} statusCode HTTP status code to deny route with.
  * @returns {(req, res, next) => undefined} The route handler or middleware for express.
  */
-const denyRoute = statusCode => (_req, _res, next) =>
-  next(new HTTPError(statusCode));
+const denyRoute = statusCode => (_req, _res, next) => next(new HTTPError(statusCode));
 
 /**
  * Defines a generic express route handler for use with `withErrors`.
@@ -297,8 +296,7 @@ const denyRoute = statusCode => (_req, _res, next) =>
  * @param {expressHandler} handler The route handler that may reject.
  * @returns {expressHandler} A new function which will catch any errors that occur within handler and pass them to next(...).
  */
-const withErrors = handler => (req, res, next) =>
-  handler(req, res, next).catch(next);
+const withErrors = handler => (req, res, next) => handler(req, res, next).catch(next);
 
 /**
  * @swagger
@@ -404,15 +402,8 @@ const notificationRoutes = app => {
       const { accessKey } = req.params;
 
       // check that a valid access key was given
-      if (
-        !accessKey ||
-        typeof accessKey !== 'string' ||
-        accessKey.length <= 0
-      ) {
-        throw new HTTPError(
-          400,
-          'Access key must be a valid, non-empty string'
-        );
+      if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
+        throw new HTTPError(400, 'Access key must be a valid, non-empty string');
       }
 
       // try to find the notification
@@ -432,18 +423,11 @@ const notificationRoutes = app => {
     apiUrl('notifications'),
     withErrors(async (req, res) => {
       const data = req.body || {};
-      const requiredFields = [
-        'institutionKey',
-        'courseKey',
-        'termKey',
-        'contact',
-      ];
+      const requiredFields = ['institutionKey', 'courseKey', 'termKey', 'contact'];
       const optionalFields = ['sectionKey', 'enabled'];
 
       // determine missing and extra fields
-      const missingFields = requiredFields.filter(
-        key => !data.hasOwnProperty(key)
-      );
+      const missingFields = requiredFields.filter(key => !data.hasOwnProperty(key));
       const extraFields = Object.keys(data).filter(
         key => !requiredFields.includes(key) && !optionalFields.includes(key)
       );
@@ -488,15 +472,8 @@ const notificationRoutes = app => {
       const { accessKey } = req.params;
 
       // check that a valid access key was given
-      if (
-        !accessKey ||
-        typeof accessKey !== 'string' ||
-        accessKey.length <= 0
-      ) {
-        throw new HTTPError(
-          400,
-          'Access key must be a valid, non-empty string'
-        );
+      if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
+        throw new HTTPError(400, 'Access key must be a valid, non-empty string');
       }
 
       // try to find and disable the notification
@@ -522,15 +499,8 @@ const notificationRoutes = app => {
       const { accessKey } = req.params;
 
       // check that a valid access key was given
-      if (
-        !accessKey ||
-        typeof accessKey !== 'string' ||
-        accessKey.length <= 0
-      ) {
-        throw new HTTPError(
-          400,
-          'Access key must be a valid, non-empty string'
-        );
+      if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
+        throw new HTTPError(400, 'Access key must be a valid, non-empty string');
       }
 
       // ensure only allowed fields have been specified
@@ -542,9 +512,7 @@ const notificationRoutes = app => {
         'contact',
         'enabled',
       ];
-      const extraFields = Object.keys(data).filter(
-        key => !allowedFields.includes(key)
-      );
+      const extraFields = Object.keys(data).filter(key => !allowedFields.includes(key));
       if (extraFields.length > 0) {
         throw new HTTPError(
           400,
@@ -666,15 +634,8 @@ const runRoutes = app => {
       const limit = parseInt(req.params.limit || '-1', 10);
 
       // check that a valid access key was given
-      if (
-        !accessKey ||
-        typeof accessKey !== 'string' ||
-        accessKey.length <= 0
-      ) {
-        throw new HTTPError(
-          400,
-          'Access key must be a valid, non-empty string'
-        );
+      if (!accessKey || typeof accessKey !== 'string' || accessKey.length <= 0) {
+        throw new HTTPError(400, 'Access key must be a valid, non-empty string');
       } else if (isNaN(limit)) {
         throw new HTTPError(400, 'The limit value must be an integer value');
       }

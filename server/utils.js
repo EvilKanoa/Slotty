@@ -14,10 +14,7 @@ const utils = (module.exports = {
    * @param {String|Array<String>} [chars='abcdefghijklmnopqrstuvwxyz0123456789'] List of possible characters to use.
    * @returns {String} A random access key.
    */
-  generateAccessKey: (
-    length = 6,
-    chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  ) => {
+  generateAccessKey: (length = 6, chars = 'abcdefghijklmnopqrstuvwxyz0123456789') => {
     let key = '';
     for (let i = 0; i < length; i++) {
       key = key + chars[Math.floor(Math.random() * chars.length)];
@@ -42,9 +39,7 @@ const utils = (module.exports = {
     return words
       .filter(word => typeof word === 'string' && word.length > 0)
       .map(word => word.toLowerCase())
-      .reduceRight(
-        (acc, word) => `${word}${acc.charAt(0).toUpperCase()}${acc.slice}`
-      );
+      .reduceRight((acc, word) => `${word}${acc.charAt(0).toUpperCase()}${acc.slice}`);
   },
 
   /**

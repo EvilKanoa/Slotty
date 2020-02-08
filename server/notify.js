@@ -86,9 +86,7 @@ class Notifier {
   async sendNotification(notification, event = {}) {
     // ensure that params are sufficient
     if (!notification || !notification.contact) {
-      throw new Error(
-        'Notification object must be present and contain a contact value'
-      );
+      throw new Error('Notification object must be present and contain a contact value');
     }
 
     // determine the correct contact method if available
@@ -118,9 +116,7 @@ class Notifier {
     // ensure we have valid input
     if (!type || !destination || !message) {
       console.log({ type, destination, message });
-      throw new Error(
-        'Type, destination, and message must all have valid values'
-      );
+      throw new Error('Type, destination, and message must all have valid values');
     }
 
     // extract the information required for the message
@@ -168,11 +164,7 @@ class Notifier {
    * @returns {{ type: CONTACT_TYPE, destination: String }} The contact type that destination most likely uses or CONTACT_TYPE.UNKNOWN if unable to determine as type and the cleaned destination string.
    */
   getContactInfo(destination) {
-    if (
-      !destination ||
-      typeof destination !== 'string' ||
-      destination.length <= 0
-    ) {
+    if (!destination || typeof destination !== 'string' || destination.length <= 0) {
       return { type: this.CONTACT_TYPE.UNKNOWN, destination: '' };
     }
 

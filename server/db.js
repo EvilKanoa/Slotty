@@ -123,9 +123,7 @@ const sql = (literals, ...values) => ({
     )
     .text.replace(/\s+/g, ' ')
     .trim(),
-  values: values.map(val =>
-    val instanceof Date ? utils.toUnixEpoch(val) : val
-  ),
+  values: values.map(val => (val instanceof Date ? utils.toUnixEpoch(val) : val)),
 
   // add a utility method that allows appending multiple sql strings
   append: (newLiterals, ...newValues) => {
@@ -176,9 +174,7 @@ class DB {
   async initialize() {
     // should fail if the db hasn't been opened
     if (!this.isOpen) {
-      return Promise.reject(
-        'Must be connected to a database before initialization'
-      );
+      return Promise.reject('Must be connected to a database before initialization');
     }
 
     // use a specific client so we can create the tables with a transaction
@@ -415,13 +411,8 @@ class DB {
    * @returns {Promise<Notification|undefined>} Resolves with undefined if no notification found.
    */
   async getNotification(idOrAccessKey) {
-    if (
-      !idOrAccessKey ||
-      (idOrAccessKey.id === undefined && !idOrAccessKey.accessKey)
-    ) {
-      throw new Error(
-        'Either the notification ID or access key must be specified'
-      );
+    if (!idOrAccessKey || (idOrAccessKey.id === undefined && !idOrAccessKey.accessKey)) {
+      throw new Error('Either the notification ID or access key must be specified');
     }
 
     // use the correct query to find a matching notification
@@ -448,13 +439,7 @@ class DB {
    * @returns {Promise<NotificationRun>} The created notification entry.
    */
   async createRun(
-    {
-      notificationId,
-      error,
-      sourceData,
-      timestamp = new Date(),
-      notificationSent,
-    } = {},
+    { notificationId, error, sourceData, timestamp = new Date(), notificationSent } = {},
     defaultNotificationId
   ) {
     let myNotificationId =
@@ -493,11 +478,7 @@ class DB {
     }
 
     // ensure we updated the matching notification
-    if (
-      notificationErr ||
-      !notificationUpdate ||
-      notificationUpdate.rowCount <= 0
-    ) {
+    if (notificationErr || !notificationUpdate || notificationUpdate.rowCount <= 0) {
       // remove the run if we were unable to update the notification
       try {
         await this.pool.query(
@@ -511,9 +492,7 @@ class DB {
       if (notificationErr) {
         throw notificationErr;
       } else {
-        throw new Error(
-          'Failed to update the related notification, please try again'
-        );
+        throw new Error('Failed to update the related notification, please try again');
       }
     } else {
       // if all went well, return the newly created run
@@ -557,13 +536,8 @@ class DB {
    * @returns {Promise<Array<NotificationRun>>} Array of runs found. Sorted with most recent run first.
    */
   async getRuns(idOrAccessKey, limit = 1) {
-    if (
-      !idOrAccessKey ||
-      (idOrAccessKey.id === undefined && !idOrAccessKey.accessKey)
-    ) {
-      throw new Error(
-        'Either the notification ID or access key must be specified'
-      );
+    if (!idOrAccessKey || (idOrAccessKey.id === undefined && !idOrAccessKey.accessKey)) {
+      throw new Error('Either the notification ID or access key must be specified');
     }
 
     // start building the query
@@ -608,9 +582,7 @@ class DB {
   async listActiveNotifications(effectiveTtl = config.slotDataTtl, limit = -1) {
     // ensure the effectiveTtl value is usable
     if (typeof effectiveTtl !== 'number' || effectiveTtl < 0) {
-      throw new Error(
-        'The effective TTL must be a number with a value of 0 or greater'
-      );
+      throw new Error('The effective TTL must be a number with a value of 0 or greater');
     }
 
     // start by building the query explicitly

@@ -14,11 +14,12 @@
     "eject": "react-scripts eject",
     "server": "NODE_ENV=development nodemon server/index.js",
     "prod": "yarn build && NODE_ENV=production nodemon server/index.js",
-    "lint": "prettier --write **/*.js",
+    "lint": "prettier --write {{src,server}/**/*.js,*.js}",
     "pg": "docker run --rm --name pg-docker -e POSTGRES_PASSWORD=docker -e POSTGRES_USER=postgres -d -p 5432:5432 postgres",
     "stop": "docker stop pg-docker"
   },
   "prettier": {
+    "printWidth": 90,
     "tabWidth": 2,
     "singleQuote": true,
     "trailingComma": "es5"
@@ -39,6 +40,7 @@
     ]
   },
   "dependencies": {
+    "@uifabric/icons": "^7.3.5",
     "body-parser": "^1.19.0",
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
@@ -48,8 +50,10 @@
     "nodemon": "^2.0.2",
     "office-ui-fabric-react": "^7.90.0",
     "pg": "^7.18.1",
+    "prop-types": "^15.7.2",
     "react": "^16.12.0",
     "react-dom": "^16.12.0",
+    "react-expand-animated": "^1.0.1",
     "react-scripts": "3.3.1",
     "statuses": "^1.5.0",
     "swagger-jsdoc": "^3.5.0",

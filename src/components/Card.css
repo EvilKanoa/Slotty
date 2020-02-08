@@ -1,0 +1,33 @@
+.card-container {
+  display: block;
+  margin: 0.5em;
+  border-radius: 0.5em;
+  box-shadow: 0px 1px 7px -2px rgba(0,0,0, 0.6);
+
+  min-width: 16em;
+  max-width: 64em;
+}
+
+.card-container .card-header {
+  padding: 0.5em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card-header-tooltip {
+  box-shadow: 0px 0px 10px -2px rgba(0,0,0, 0.8);
+}
+
+.card-container .card-header .card-header-bar {
+  margin-right: 1em;
+}
+
+.card-header .card-header-icon {
+  padding-right: 0.5em;
+}
+
+.card-container .card-content {
+  padding: 0 1.25em 1.25em 1.25em;
+  display: block;
+  text-align: start;
+}
