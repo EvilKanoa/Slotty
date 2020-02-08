@@ -8,6 +8,8 @@ require('dotenv').config();
 const aliases = {
   DATABASE: 'DB_PROD',
   POSTGRES: 'DB_PROD',
+  DATABASE_URL: 'DB_PROD',
+  POSTGRES_URL: 'DB_PROD',
 };
 
 // apply the aliases to the process env
