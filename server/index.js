@@ -36,14 +36,23 @@ process.on('SIGINT', () => process.exit(2));
   // connect to the database
   await db.open();
 
-  // create and run a task worker
-  const worker = new Worker(config.workerInterval * 1000, config.webadvisorApi);
-  worker.start();
+  // create and run a task worker if in dev mode
+  if (config.isDev) {
+    console.log('Starting the worker...');
+    const worker = new Worker(config.workerInterval * 1000, config.webadvisorApi);
+    worker.start();
+  } else {
+    // tell the user that they may need to manually start the worker
+    console.log(
+      'Running in production mode, a separate worker process must be started using yarn worker!'
+    );
+  }
 
   // determine port and start the server
   app.listen(config.port, () =>
     console.log(`
     Slotty is now running on port ${config.port}!
+    Mode: ${config.isDev ? 'dev' : 'prod'}
     `)
   );
 })()
