@@ -4,6 +4,21 @@ const utils = require('./server/utils');
 // load environment variables
 require('dotenv').config();
 
+// allow alternatively keys to be used from environment variables
+const aliases = {
+  DATABASE: 'DB_PROD',
+  POSTGRES: 'DB_PROD',
+};
+
+// apply the aliases to the process env
+Object.keys(aliases)
+  // only include aliases that are used in the current env
+  .filter(alias => process.env.hasOwnProperty(alias))
+  // don't override values set by their primary key
+  .filter(alias => !process.env.hasOwnProperty(aliases[alias]))
+  // apply each valid alias
+  .forEach(alias => (process.env[aliases[alias]] = process.env[alias]));
+
 /**
  * Define the default options and types of the configuration.
  * Note: If you want to change these values, a better option is to create a .env file.
