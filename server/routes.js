@@ -1,5 +1,6 @@
 const express = require('express');
 const statuses = require('statuses');
+const path = require('path');
 const db = require('./db');
 const { apiUrl } = require('./utils');
 const config = require('../config');
@@ -481,31 +482,37 @@ const notificationRoutes = app => {
   app.post(apiUrl('notifications/:notificationId'), denyRoute(409));
 
   // disable a notification
-  app.delete(apiUrl('notifications/:accessKey'), withErrors(async (req, res) => {
-    const { accessKey } = req.params;
+  app.delete(
+    apiUrl('notifications/:accessKey'),
+    withErrors(async (req, res) => {
+      const { accessKey } = req.params;
 
-    // check that a valid access key was given
-    if (
-      !accessKey ||
-      typeof accessKey !== 'string' ||
-      accessKey.length <= 0
-    ) {
-      throw new HTTPError(
-        400,
-        'Access key must be a valid, non-empty string'
-      );
-    }
+      // check that a valid access key was given
+      if (
+        !accessKey ||
+        typeof accessKey !== 'string' ||
+        accessKey.length <= 0
+      ) {
+        throw new HTTPError(
+          400,
+          'Access key must be a valid, non-empty string'
+        );
+      }
 
-    // try to find and disable the notification
-    const notification = await db.updateNotification({ accessKey, enabled: false });
+      // try to find and disable the notification
+      const notification = await db.updateNotification({
+        accessKey,
+        enabled: false,
+      });
 
-    // check if we failed to find a notification and throw an error if so, otherwise return the updated notification
-    if (!notification || notification.accessKey !== accessKey) {
-      throw new HTTPError(404);
-    } else {
-      return res.status(200).json(notification);
-    }
-  }))
+      // check if we failed to find a notification and throw an error if so, otherwise return the updated notification
+      if (!notification || notification.accessKey !== accessKey) {
+        throw new HTTPError(404);
+      } else {
+        return res.status(200).json(notification);
+      }
+    })
+  );
 
   // update a notification
   app.put(
@@ -629,53 +636,56 @@ const notificationRoutes = app => {
  */
 const runRoutes = app => {
   // get a single run by id
-  app.get(apiUrl('runs/:runId'), withErrors(async (req, res) => {
-    const runId = parseInt(req.params.runId, 10);
+  app.get(
+    apiUrl('runs/:runId'),
+    withErrors(async (req, res) => {
+      const runId = parseInt(req.params.runId, 10);
 
-    // check that a valid run ID was given
-    if (!runId || isNaN(runId) || runId <= 0) {
-      throw new HTTPError(
-        400,
-        'The run ID must be a valid positive integer'
-      );
-    }
+      // check that a valid run ID was given
+      if (!runId || isNaN(runId) || runId <= 0) {
+        throw new HTTPError(400, 'The run ID must be a valid positive integer');
+      }
 
-    // try to find the run
-    const run = await db.getRun(runId);
+      // try to find the run
+      const run = await db.getRun(runId);
 
-    // check if we found a run or not and send the correct response
-    if (!run) {
-      throw new HTTPError(404);
-    } else {
-      return res.status(200).json(run);
-    }
-  }));
+      // check if we found a run or not and send the correct response
+      if (!run) {
+        throw new HTTPError(404);
+      } else {
+        return res.status(200).json(run);
+      }
+    })
+  );
 
   // get a list of runs by notification id or access key
-  app.get(apiUrl('runs/list/:accessKey/:limit?'), withErrors(async (req, res) => {
-    const { accessKey } = req.params;
-    const limit = parseInt(req.params.limit || '-1', 10);
+  app.get(
+    apiUrl('runs/list/:accessKey/:limit?'),
+    withErrors(async (req, res) => {
+      const { accessKey } = req.params;
+      const limit = parseInt(req.params.limit || '-1', 10);
 
-    // check that a valid access key was given
-    if (
-      !accessKey ||
-      typeof accessKey !== 'string' ||
-      accessKey.length <= 0
-    ) {
-      throw new HTTPError(
-        400,
-        'Access key must be a valid, non-empty string'
-      );
-    } else if (isNaN(limit)) {
-      throw new HTTPError(400, 'The limit value must be an integer value');
-    }
+      // check that a valid access key was given
+      if (
+        !accessKey ||
+        typeof accessKey !== 'string' ||
+        accessKey.length <= 0
+      ) {
+        throw new HTTPError(
+          400,
+          'Access key must be a valid, non-empty string'
+        );
+      } else if (isNaN(limit)) {
+        throw new HTTPError(400, 'The limit value must be an integer value');
+      }
 
-    // try to perform the run listing using our parameters
-    const runs = await db.getRuns({ accessKey }, limit);
+      // try to perform the run listing using our parameters
+      const runs = await db.getRuns({ accessKey }, limit);
 
-    // since not found requests simply return an empty list, we can return runs in all cases
-    res.status(200).json(runs);
-  }));
+      // since not found requests simply return an empty list, we can return runs in all cases
+      res.status(200).json(runs);
+    })
+  );
 };
 
 /**
@@ -693,12 +703,17 @@ const apiRoutes = app => {
 };
 
 module.exports = app => {
-  // serve up all files in the 'frontend' directory statically
+  // serve up all files in the 'build' directory statically
   // this provides a simple HTTP server
-  app.use(express.static('frontend'));
+  app.use(express.static(path.resolve(__dirname, '../build')));
 
   // attach API routes
   apiRoutes(app);
+
+  // catch all unknown routes and serve our index bundle to allow client-side routing
+  // this must come after the above registrations so it does not override the static or API routes
+  const index = path.resolve(__dirname, '../build/index.html');
+  app.get('*', (_req, res) => res.sendFile(index));
 
   // attach our error handler to catch all errors and, in particular, HTTPErrors
   app.use(errorHandler);

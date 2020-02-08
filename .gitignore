@@ -4,6 +4,7 @@
 
 ### Slotty custom ignores ###
 slotty.db
+build
 
 ### macOS ###
 # General
@@ -139,6 +140,19 @@ dist/
 tmp/
 temp/
 
+### react ###
+.DS_*
+**/*.backup.*
+**/*.back.*
+
+node_modules
+
+*.sublime*
+
+psd
+thumb
+sketch
+
 ### VisualStudioCode ###
 .vscode/*
 !.vscode/settings.json
@@ -176,5 +190,4 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-# End of https://www.gitignore.io/api/node,macos,windows,visualstudiocode
-
+# End of https://www.gitignore.io/api/node,react,macos,windows,visualstudiocode

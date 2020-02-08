@@ -1,15 +1,19 @@
 {
   "name": "slotty",
-  "version": "1.0.0",
-  "description": " Online web app designed to help you get a slot in that hard to register for course! ",
-  "main": "backend/index.js",
+  "version": "0.0.1",
+  "description": " Online web app designed to help you get a slot in that hard to register for course!",
+  "main": "server/index.js",
   "repository": "https://github.com/EvilKanoa/Slotty",
   "author": "EvilKanoa <kanoa@kanoa.ca>",
   "license": "GPL-3.0-only",
-  "private": false,
+  "private": true,
   "scripts": {
-    "start": "NODE_ENV=development nodemon backend/index.js",
-    "prod": "NODE_ENV=production nodemon backend/index.js",
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "echo TODO: Testing && false && react-scripts test",
+    "eject": "react-scripts eject",
+    "server": "NODE_ENV=development nodemon server/index.js",
+    "prod": "yarn build && NODE_ENV=production nodemon server/index.js",
     "lint": "prettier --write **/*.js",
     "pg": "docker run --rm --name pg-docker -e POSTGRES_PASSWORD=docker -e POSTGRES_USER=postgres -d -p 5432:5432 postgres",
     "stop": "docker stop pg-docker"
@@ -19,6 +23,21 @@
     "singleQuote": true,
     "trailingComma": "es5"
   },
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
   "dependencies": {
     "body-parser": "^1.19.0",
     "dotenv": "^8.2.0",
@@ -27,7 +46,11 @@
     "lodash": "^4.17.15",
     "morgan": "^1.9.1",
     "nodemon": "^2.0.2",
+    "office-ui-fabric-react": "^7.90.0",
     "pg": "^7.18.1",
+    "react": "^16.12.0",
+    "react-dom": "^16.12.0",
+    "react-scripts": "3.3.1",
     "statuses": "^1.5.0",
     "swagger-jsdoc": "^3.5.0",
     "swagger-ui-express": "^4.1.3",

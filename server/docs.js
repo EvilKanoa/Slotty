@@ -27,7 +27,7 @@ const swaggerDefinition = Object.freeze({
  */
 const swaggerJSDocOptions = Object.freeze({
   swaggerDefinition,
-  apis: ['./backend/routes.js'],
+  apis: ['./server/routes.js'],
 });
 
 /**

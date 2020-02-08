@@ -21,7 +21,7 @@ Long answer: TODO
 
 #### Q: What framework is used on the frontend?
 
-Short answer: None
+Short answer: React (via Create React App)
 
 Long answer: TODO
 

@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const utils = require('./backend/utils');
+const utils = require('./server/utils');
 
 // load environment variables
 require('dotenv').config();
@@ -61,7 +61,7 @@ const config = {
    * @constant
    * @type {Number}
    */
-  port: 8080,
+  port: 3000,
 
   /**
    * Defines the interval, in seconds, between each slot check that is performed.
