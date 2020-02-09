@@ -38,7 +38,7 @@ const AboutCard = () => {
           <li>
             Wait for an available slot. Slotty is now checking with the school directly
             (using their registration services) to see if the course has had any slots
-            open up. This check happens quick often (think seconds) ensuring that Slotty
+            open up. This check happens quite often (think seconds) ensuring that Slotty
             always knows the moment a slot is available.
           </li>
           <li>
