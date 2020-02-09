@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { initializeIcons } from '@uifabric/icons';
 
 import App from './components/App';
+import './theme';
 
 import './index.css';
 

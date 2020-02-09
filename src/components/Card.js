@@ -21,7 +21,7 @@ import './Card.css';
 /**
  * Container component that includes a collapsable content area and a header.
  */
-const Card = forwardRef(({ header, defaultOpen = true, children }, ref) => {
+const Card = forwardRef(({ header, defaultOpen = true, children, className }, ref) => {
   const [isOpen, setOpen] = useState(defaultOpen);
   const onHeaderClick = useCallback(() => setOpen(isOpen => !isOpen), [setOpen]);
   const tooltipText = useMemo(
@@ -43,7 +43,7 @@ const Card = forwardRef(({ header, defaultOpen = true, children }, ref) => {
   );
 
   return (
-    <div className="card-container">
+    <div className={'card-container ' + (className || '')}>
       <TooltipHost
         content={tooltipText}
         delay={TooltipDelay.long}
