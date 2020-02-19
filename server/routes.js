@@ -706,6 +706,9 @@ const webhookRoutes = app => {
     withErrors(async (req, res) => {
       const { AccountSid: accountSid, From: from, Body: accessKey } = req.body;
 
+      // output logging information
+      console.log('Received SMS at webhook', req.body);
+
       // ensure we have all needed fields and the correct accountSid is present
       if (!accountSid || !from || !accessKey) {
         throw new HTTPError(
