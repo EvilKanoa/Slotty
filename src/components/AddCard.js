@@ -9,8 +9,13 @@ import {
   Stack,
   TooltipHost,
   TooltipDelay,
+  Modal,
+  Spinner,
+  SpinnerSize,
 } from 'office-ui-fabric-react';
 
+import API from '../api';
+import InfoModal from './InfoModal';
 import ConfirmDialog from './ConfirmDialog';
 import Card from './Card';
 
@@ -51,6 +56,8 @@ const AddCard = () => {
   const confirmRef = useRef(null);
 
   const [notification, setNotification] = useState(defaultNotification);
+  const [result, setResult] = useState();
+  const [isLoading, setLoading] = useState(false);
 
   const canSave = useMemo(() => {
     const { institutionKey, termKey, contact, courseKey } = notification;
@@ -78,11 +85,40 @@ const AddCard = () => {
   ]);
   const onSave = useCallback(async () => {
     if (await confirmRef.current.confirm()) {
-      console.log('saving!');
-    } else {
-      console.log('not saving!');
+      setLoading(true);
+
+      // transform the notification
+      const notificationData = {
+        ...notification,
+        contact: `+1${notification.contact}`,
+      };
+
+      try {
+        const data = await API.createNotification(notificationData);
+        setResult({
+          title: 'Notification Created',
+          message: `A new notification was successfully created. Please verify the contact method by responding to Slotty's message. Keep track of the following access key for the new notification: "${data.accessKey}"`,
+          clearOnClose: true,
+        });
+      } catch (err) {
+        console.error(err);
+        setResult({
+          title: 'Error Encountered',
+          message: `Failed to create a new notification. Please try again or contact the site owner.`,
+        });
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [confirmRef]);
+  }, [confirmRef, setLoading, notification]);
+
+  const onResultModalClose = useCallback(() => {
+    if (result && result.clearOnClose) {
+      onReset();
+    }
+
+    setResult(undefined);
+  }, [result, setResult, onReset]);
 
   return (
     <Card className="add-notification-card" header="Create a new notification">
@@ -180,6 +216,23 @@ const AddCard = () => {
         confirmText="Create"
         ref={confirmRef}
       />
+
+      <Modal
+        isOpen={isLoading}
+        isBlocking
+        containerClassName="add-notification-loading-modal-container"
+        scrollableContentClassName="add-notification-loading-modal-content"
+      >
+        <Spinner label="Creating a new notification..." size={SpinnerSize.large} />
+      </Modal>
+
+      <InfoModal
+        isOpen={!!result}
+        onClose={onResultModalClose}
+        title={result && result.title}
+      >
+        {result && result.message}
+      </InfoModal>
     </Card>
   );
 };

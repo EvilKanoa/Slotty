@@ -1,0 +1,31 @@
+.info-modal {
+  max-width: 48rem;
+  display: flex;
+  padding: 24px;
+}
+
+.info-modal > .content-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.info-modal .header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin-bottom: 1em;
+}
+
+.info-modal .header .cancel-icon {
+  color: black;
+  margin-top: 4px;
+  margin-right: 2px;
+}
+
+.info-modal .footer {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  margin-top: 1em;
+}

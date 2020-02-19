@@ -15,7 +15,7 @@
     "server": "NODE_ENV=development nodemon server/index.js",
     "prod": "NODE_ENV=production nodemon server/index.js",
     "worker": "NODE_ENV=production nodemon server/workerProcess.js",
-    "lint": "prettier --write {{src,server}/**/*.js,*.js}",
+    "lint": "prettier --write {{src,server}/**/*.js,{src,server}/*.js,*.js}",
     "pg": "docker run --rm --name pg-docker -e POSTGRES_PASSWORD=docker -e POSTGRES_USER=postgres -d -p 5432:5432 postgres",
     "stop": "docker stop pg-docker",
     "heroku-postbuild": "yarn build"

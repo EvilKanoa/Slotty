@@ -5,5 +5,5 @@ loadTheme({
     xSmall: { fontSize: 12 },
     small: { fontSize: 13 },
     medium: { fontSize: 15 },
-  }
+  },
 });
