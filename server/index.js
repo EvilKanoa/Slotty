@@ -27,7 +27,8 @@ process.on('SIGINT', () => process.exit(2));
 
   // register middleware for app
   app.use(require('morgan')(config.logFormat));
-  app.use(require('body-parser').json({ type: '*/*' })); // assume all bodies are JSON
+  app.use(require('body-parser').json());
+  app.use(require('body-parser').urlencoded({ extended: true }));
 
   // register routes for app
   require('./docs')(app);

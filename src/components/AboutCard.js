@@ -32,8 +32,9 @@ const AboutCard = () => {
         <ol>
           <li>
             Create a new notification for a course and, optionally, a section that you
-            need to register for but may fill up quickly. Keep track of the "access key"
-            for your notification, this is how you modify and delete it.
+            need to register for but may fill up quickly. Then, you'll need to confirm the
+            contact number so Slotty can happily activate the notification. Keep track of
+            the "access key" for your notification, this is how you modify and delete it.
           </li>
           <li>
             Wait for an available slot. Slotty is now checking with the school directly

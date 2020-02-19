@@ -15,6 +15,7 @@ const utils = require('./utils');
  * @property {String} termKey The key used to determine which term the course occurs within (e.g. F19, W22, ect).
  * @property {String} contact The contact method used to send the notification.
  * @property {Boolean} enabled Whether this notification is currently enabled.
+ * @property {Boolean} verified Whether this notification has been verified to be ran with the specified contact method.
  */
 
 /**
@@ -58,6 +59,7 @@ const toNotification = (data = {}, overrides = {}) => ({
   termKey: data.term_key,
   contact: data.contact,
   enabled: !!data.enabled,
+  verified: !!data.verified,
   ...overrides,
 });
 
@@ -195,7 +197,8 @@ class DB {
           section_key TEXT DEFAULT NULL,
           term_key TEXT NOT NULL,
           contact TEXT NOT NULL,
-          enabled BOOLEAN NOT NULL DEFAULT TRUE
+          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          verified BOOLEAN NOT NULL DEFAULT FALSE
         )
       `);
 
@@ -299,6 +302,7 @@ class DB {
     termKey,
     contact,
     enabled = true,
+    verified = false,
   } = {}) {
     if (!institutionKey || !courseKey || !termKey || !contact) {
       throw new Error(
@@ -318,8 +322,8 @@ class DB {
 
     // create the new notification
     const data = await this.pool.query(sql`
-      INSERT INTO notifications(access_key, institution_key, course_key, section_key, term_key, contact, enabled)
-      VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${sectionKey}, ${termKey}, ${contact}, ${!!enabled})
+      INSERT INTO notifications(access_key, institution_key, course_key, section_key, term_key, contact, enabled, verified)
+      VALUES (${accessKey}, ${institutionKey}, ${courseKey}, ${sectionKey}, ${termKey}, ${contact}, ${!!enabled}, ${!!verified})
       RETURNING *
     `);
 
@@ -353,6 +357,7 @@ class DB {
       termKey: 'term_key',
       contact: 'contact',
       enabled: 'enabled',
+      verified: 'verified',
     };
 
     // ensure that we have a method to specify the correct notification
@@ -369,6 +374,12 @@ class DB {
     if (fieldsToSet.length === 0) {
       // if we do not set any fields, we can return early
       return notification;
+    }
+
+    // if contact is changed, we have to re-verify the notification
+    if (fieldsToSet.includes('contact')) {
+      fieldsToSet.push('verified');
+      notification.verified = false;
     }
 
     // start building the update query

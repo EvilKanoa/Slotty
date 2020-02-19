@@ -142,11 +142,62 @@ const config = {
    * @constant
    * @type {String}
    */
-  messageTemplate: `
+  notificationMessageTemplate: `
 Hello, this is an automated message from $app in relation to the notification with the following access key: "$accessKey".
 Some open slots ($availableSlots/$totalSlots) have been detected for $courseKey/$sectionKey ($institutionKey - $termKey) as of $time.
 We wish you luck, register fast!
 (Visit $app to disable this notification using the above access key.)
+`.trim(),
+
+  /**
+   * Defines the message that will be sent as a verification for a notification.
+   * As above, a simple replace will be ran over this string to inject some variables using the '$' prefix.
+   * @example
+   * Variables:
+   *  - $app: Extracts the name of the app as a string (e.g. "Slotty").
+   *  - $action: The type of action triggering this message (e.g. "modified" or "created").
+   *  - $accessKey: The value of notification.accessKey.
+   *  - $contact: The value of notification.contact.
+   * @readonly
+   * @constant
+   * @type {String}
+   */
+  verificationMessageTemplate: `
+Hello, this is an automated message from $app. A notification has been $action using your phone number, $contact, with the following access key: "$accessKey".
+To verify and enable this notification, please reply with a message containing the access key exactly (that is, a message containing only "$accessKey").
+If you do not wish to receive messages from $app, or you did not create this notification, please ignore this message.
+`.trim(),
+
+  /**
+   * Defines the message that will be sent once a notification has been verified.
+   * As above, a simple replace will be ran over this string to inject some variables using the '$' prefix.
+   * @example
+   * Variables:
+   *  - $app: Extracts the name of the app as a string (e.g. "Slotty").
+   *  - $accessKey: The access key of the notification that was verified.
+   * @readonly
+   * @constant
+   * @type {String}
+   */
+  verifiedMessageTemplate: `
+Your notification (with access key: "$accessKey") is now verified!
+$app says congrats!
+`.trim(),
+
+  /**
+   * Defines the message that will be sent when a user fails to verify a notification.
+   * As above, a simple replace will be ran over this string to inject some variables using the '$' prefix.
+   * @example
+   * Variables:
+   *  - $app: Extracts the name of the app as a string (e.g. "Slotty").
+   *  - $accessKey: The access key of the notification that was verified.
+   * @readonly
+   * @constant
+   * @type {String}
+   */
+  notVerifiedMessageTemplate: `
+$app is unable to verify the notification with the following access key: "$accessKey".
+Please ensure you are verifying this notification from the correct contact number and that a notification with that access key does exist.
 `.trim(),
 };
 

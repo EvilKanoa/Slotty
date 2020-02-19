@@ -155,13 +155,18 @@ class Worker {
 
     // this function handles step 4 from above, it will perform actions on an individual notification basis
     const performSingleCheck = async (notification, data) => {
-      // ensure the notification is enabled and course data is present
-      if (!notification.enabled || !data || !data.course || !data.course.sections) {
+      // ensure the notification is enabled, verified, and course data is present
+      if (!data || !data.course || !data.course.sections) {
         console.error('Unable to perform action with insufficient data', {
           notification,
           data,
         });
-
+        return 0;
+      } else if (!notification.enabled || !notification.verified) {
+        console.log(
+          'Unable to perform single check since notification is not enabled and/or not verified',
+          { notification, data }
+        );
         return 0;
       }
 

@@ -18,6 +18,19 @@ class Notifier {
   };
 
   /**
+   * Defines the different base messages that may be used when sending a formatted message.
+   * @readonly
+   * @enum
+   * @type {Object}
+   */
+  MESSAGE_TYPE = {
+    NOTIFICATION: config.notificationMessageTemplate,
+    VERIFICATION: config.verificationMessageTemplate,
+    VERIFIED: config.verifiedMessageTemplate,
+    NOT_VERIFIED: config.notVerifiedMessageTemplate,
+  };
+
+  /**
    * Defines the string that is used when undefined variables are used while formatting a message.
    * @readonly
    * @constant
@@ -43,35 +56,29 @@ class Notifier {
   }
 
   /**
-   * Given a notification and event data for said notification, this function will format a message that can then be sent.
+   * Given a base message type from Notifier.MESSAGE_TYPE, and an object of variables, a new message will be created and formatted.
    * Note: This does not send a message, only applies the formatting required.
-   * @param {Object} notification A notification object from the database.
-   * @param {{ totalSlots: Number, availableSlots: Number }} event Object containing all fields related to the event in question.
-   * @returns {String} A formatted notification string.
+   * @param {String} messageType One of the values from Notifier.MESSAGE_TYPE that defines what type of message should be formatted.
+   * @param {Object} variables Object containing all variables and what they should be replaced with, each key should be prefixed with a '$'.
+   *                           Some additional variables will also be added if not present such as $app and $time.
+   * @returns {String} A formatted message string.
    */
-  formatNotification(notification, event) {
-    // define variables that can be used in the message and their values.
-    const variables = {
+  formatMessage(messageType = '', variables = {}) {
+    // define variables that can be used in the message and their values based on passed variables.
+    const allVariables = {
       $app: config.appName,
       $time: new Date().toUTCString(),
-      $availableSlots: event.availableSlots,
-      $totalSlots: event.totalSlots,
-      $accessKey: notification.accessKey,
-      $institutionKey: notification.institutionKey,
-      $courseKey: notification.courseKey,
-      $sectionKey: notification.sectionKey,
-      $termKey: notification.termKey,
-      $contact: notification.contact,
+      ...variables,
     };
 
     // format and return the message string
-    return Object.keys(variables).reduce(
+    return Object.keys(allVariables).reduce(
       (msg, key) =>
         msg.replace(
           new RegExp(`\\${key}`, 'ig'),
-          variables[key] || this.FALLBACK_VARIABLE_VALUE
+          allVariables[key] || this.FALLBACK_VARIABLE_VALUE
         ), // need to escape the '$' of the variable
-      config.messageTemplate
+      messageType
     );
   }
 
@@ -98,9 +105,85 @@ class Notifier {
     }
 
     // build the notification message
-    const message = this.formatNotification(notification, event);
+    const message = this.formatMessage(this.MESSAGE_TYPE.NOTIFICATION, {
+      $availableSlots: event.availableSlots,
+      $totalSlots: event.totalSlots,
+      $accessKey: notification.accessKey,
+      $institutionKey: notification.institutionKey,
+      $courseKey: notification.courseKey,
+      $sectionKey: notification.sectionKey,
+      $termKey: notification.termKey,
+      $contact: notification.contact,
+    });
 
     // send the notification
+    return this.sendMessage(contactInfo.type, contactInfo.destination, message);
+  }
+
+  /**
+   * Smart verification message sending. Handles contact type determination and formatting as well as message formatting.
+   * Call with a notification and associated action type to trigger a message to be sent if possible.
+   * @throws
+   * @param {Object} notification A notification object from the database.
+   * @param {("created"|"modified")} action Type of action that triggered a verification message to be sent.
+   * @returns {Promise<Object>} Resolves if verification sent successfully with API result data or rejects with an error.
+   */
+  async sendVerification(notification, action) {
+    // ensure that params are sufficient
+    if (!notification || !notification.contact) {
+      throw new Error('Notification object must be present and contain a contact value');
+    } else if (notification.verified) {
+      // if the notification is already verified, no action needs to be performed
+      return;
+    }
+
+    // determine the correct contact method if available
+    const contactInfo = this.getContactInfo(notification.contact);
+    if (contactInfo.type === this.CONTACT_TYPE.UNKNOWN) {
+      throw new Error(
+        'Unknown contact type for verification, unable to send verification'
+      );
+    }
+
+    // build the notification message
+    const message = this.formatMessage(this.MESSAGE_TYPE.VERIFICATION, {
+      $action: action,
+      $accessKey: notification.accessKey,
+      $contact: notification.contact,
+    });
+
+    // send the notification
+    return this.sendMessage(contactInfo.type, contactInfo.destination, message);
+  }
+
+  /**
+   * Smart verified message sending. Handles contact type determination and formatting as well as message formatting.
+   * @throws
+   * @param {String} contact The contact to send a verified message to.
+   * @param {String} accessKey The access key of the notification which was verified.
+   * @returns {Promise<Object>} Resolves if verified message sent successfully with API result data or rejects with an error.
+   */
+  async sendVerified(contact, accessKey) {
+    // ensure that params are sufficient
+    if (!contact) {
+      throw new Error('A contact value must be present');
+    }
+
+    // determine the correct contact method if available
+    const contactInfo = this.getContactInfo(contact);
+    if (contactInfo.type === this.CONTACT_TYPE.UNKNOWN) {
+      throw new Error(
+        'Unknown contact type for verified message, unable to send message'
+      );
+    }
+
+    // build the verified message
+    const message = this.formatMessage(this.MESSAGE_TYPE.VERIFIED, {
+      $accessKey: accessKey,
+      $contact: contact,
+    });
+
+    // send the verified message
     return this.sendMessage(contactInfo.type, contactInfo.destination, message);
   }
 

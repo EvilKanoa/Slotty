@@ -1,7 +1,9 @@
 const express = require('express');
 const statuses = require('statuses');
 const path = require('path');
+const MessagingResponse = require('twilio').twiml.MessagingResponse;
 const db = require('./db');
+const notifier = require('./notify');
 const { apiUrl } = require('./utils');
 const config = require('../config');
 
@@ -55,6 +57,10 @@ const config = require('../config');
  *         type: boolean
  *         default: true
  *         description: Whether this notification is currently enabled.
+ *       verified:
+ *         type: boolean
+ *         default: false
+ *         description: Whether this notification has been verified to send messages to the specified contact number.
  *     example:
  *       id: 1234
  *       lastRunId: 12345678
@@ -65,6 +71,7 @@ const config = require('../config');
  *       termKey: F22
  *       contact: '+10001112222'
  *       enabled: true
+ *       verified: true
  *
  *   PartialNotification:
  *     description: A subset of the Notification model only containing the properties that a user is allowed to change.
@@ -322,7 +329,7 @@ const withErrors = handler => (req, res, next) => handler(req, res, next).catch(
  *
  *   put:
  *     summary: Update a notification using an access key to identify it.
- *     description: Performs a partial update of a specific notification. All parameters set in the request will be set on the notification if possible. You must provide an access key. You cannot update a notification's ID or access key.
+ *     description: Performs a partial update of a specific notification. All parameters set in the request will be set on the notification if possible. You must provide an access key. You cannot update a notification's ID or access key. If a change is made to a notification's contact, the notification must be verified again. A verification message will be sent automatically in this case.
  *     tags:
  *       - Notifications
  *     parameters:
@@ -360,7 +367,7 @@ const withErrors = handler => (req, res, next) => handler(req, res, next).catch(
  * /notifications:
  *   post:
  *     summary: Create a new notification from the information given.
- *     description: Creates a new notification based upon the body of the request. A new access key will be automatically generated for the notification. If enabled was not false, then the notification will be active immediately.
+ *     description: Creates a new notification based upon the body of the request. A new access key will be automatically generated for the notification. Before a notification can be used, it must first be verified. A verification message will be sent automatically when a new notification is created. If enabled was not false, then the notification will be active immediately after verification.
  *     tags:
  *       - Notifications
  *     parameters:
@@ -452,6 +459,16 @@ const notificationRoutes = app => {
       // if no issues exist, create the new notification
       const notification = await db.createNotification(data);
 
+      // also need to send a verification message for the notification
+      try {
+        await notifier.sendVerification(notification, 'created');
+      } catch (err) {
+        // if we cannot send a verification message, we should not enable the notification
+        await db.updateNotification({ id: notification.id, enabled: false });
+        // throw the error so it gets logged correctly
+        throw err;
+      }
+
       // return the notification if it was created successfully
       if (notification) {
         return res.status(201).json(notification);
@@ -524,6 +541,20 @@ const notificationRoutes = app => {
 
       // attempt to update the notification with the specified ID
       const notification = await db.updateNotification({ accessKey, ...data });
+
+      // also need to verify the notification if it had a change to contact
+
+      // also need to send a verification message for the notification
+      if (data.contact) {
+        try {
+          await notifier.sendVerification(notification, 'modified');
+        } catch (err) {
+          // if we cannot send a verification message, we should not enable the notification
+          await db.updateNotification({ id: notification.id, enabled: false });
+          // throw the error so it gets logged correctly
+          throw err;
+        }
+      }
 
       // return the notification if it was updated successfully
       if (notification) {
@@ -663,6 +694,66 @@ const apiRoutes = app => {
   runRoutes(app);
 };
 
+/**
+ * Attaches routes to handle webhooks (and incoming requests) to an express app instance.
+ * @param {express} app Express app instance to attach webhook routes too.
+ * @returns {undefined}
+ */
+const webhookRoutes = app => {
+  // attach verification sms handler
+  app.post(
+    '/sms',
+    withErrors(async (req, res) => {
+      const { AccountSid: accountSid, From: from, Body: accessKey } = req.body;
+
+      // ensure we have all needed fields and the correct accountSid is present
+      if (!accountSid || !from || !accessKey) {
+        throw new HTTPError(
+          400,
+          'Request body must contain AccountSid, From, and Body fields at a minimum'
+        );
+      } else if (accountSid.trim() !== config.twilio.accountSid.trim()) {
+        throw new HTTPError(401, 'Invalid account SID, access denied');
+      }
+
+      // find the notification that is being verified
+      const notification = await db.getNotification({ accessKey });
+
+      // start construction a response SMS
+      const twiml = new MessagingResponse();
+
+      // ensure user is able to verify this notification
+      if (
+        notification &&
+        notification.contact === from &&
+        accessKey === notification.accessKey
+      ) {
+        // verify the notification in the db
+        await db.updateNotification({ accessKey, verified: true });
+
+        // attach the correct response
+        twiml.message(
+          notifier.formatMessage(notifier.MESSAGE_TYPE.VERIFIED, {
+            $accessKey: accessKey,
+          })
+        );
+      } else {
+        // attach the correct response
+        twiml.message(
+          notifier.formatMessage(notifier.MESSAGE_TYPE.NOT_VERIFIED, {
+            $accessKey: accessKey,
+          })
+        );
+      }
+
+      // send a reply based on the result of the verification
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      res.write(twiml.toString());
+      res.end();
+    })
+  );
+};
+
 module.exports = app => {
   // serve up all files in the 'build' directory statically
   // this provides a simple HTTP server
@@ -670,6 +761,9 @@ module.exports = app => {
 
   // attach API routes
   apiRoutes(app);
+
+  // add webhook rooutes
+  webhookRoutes(app);
 
   // catch all unknown routes and serve our index bundle to allow client-side routing
   // this must come after the above registrations so it does not override the static or API routes
