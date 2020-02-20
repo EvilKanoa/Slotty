@@ -164,8 +164,8 @@ We wish you luck, register fast!
    */
   verificationMessageTemplate: `
 Hello, this is an automated message from $app. A notification has been $action using your phone number, $contact, with the following access key: "$accessKey".
-To verify and enable this notification, please reply with a message containing the access key exactly (that is, a message containing only "$accessKey").
-If you do not wish to receive messages from $app, or you did not create this notification, please ignore this message.
+To verify and enable this notification, please reply with a message containing the access key exactly.
+If you do not wish to receive messages from $app, please ignore this message.
 `.trim(),
 
   /**
@@ -180,8 +180,8 @@ If you do not wish to receive messages from $app, or you did not create this not
    * @type {String}
    */
   verifiedMessageTemplate: `
-Your notification (with access key: "$accessKey") is now verified!
-$app says congrats!
+Your notification is now verified! Your notification has the following access key: "$accessKey".
+$app recommends that you write down the access key so you can edit the notification in the future!
 `.trim(),
 
   /**
