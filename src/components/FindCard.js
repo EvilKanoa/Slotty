@@ -1,45 +1,149 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { Text, Separator, ComboBox } from 'office-ui-fabric-react';
+import React, { useState, useCallback, useMemo } from 'react';
+import {
+  Text,
+  Separator,
+  ComboBox,
+  PrimaryButton,
+  Stack,
+  ProgressIndicator,
+} from 'office-ui-fabric-react';
+import { isEqual } from 'lodash';
 
 import API from '../api';
 import storage from '../storage';
+import EditNotification from './EditNotification';
+import LoadingModal from './LoadingModal';
+import InfoModal from './InfoModal';
 import Card from './Card';
 
 const FindCard = () => {
-  const [notification, setNotification] = useState({});
+  const [isSearchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState();
+  const [isSaving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState();
+  const [notification, setNotification] = useState();
+  const [remoteNotification, setRemoteNotification] = useState();
+  const [search, setSearch] = useState('');
 
   const suggestedKeys = storage.get('suggested_keys', []);
   const keyOptions = useMemo(() => suggestedKeys.map(key => ({ key, text: key })), [
     suggestedKeys,
   ]);
 
+  const isDirty = useMemo(
+    () =>
+      notification && remoteNotification && !isEqual(notification, remoteNotification),
+    [notification, remoteNotification]
+  );
+
   const onSearch = useCallback(
-    (_event, _option, _index, value) => {
-      if (!value || value === notification.accessKey) {
+    async key => {
+      if (!key || !key.length || isSearchLoading) {
         return;
       }
 
-      API.getNotification(value)
-        .then(data => {
-          if (!data) {
-            throw new Error('Notification not found!');
-          } else if (data.accessKey !== value) {
-            throw new Error('Failed to find a notification with the correct access key!');
-          }
+      setSearchLoading(true);
+      try {
+        const data = await API.getNotification(key);
 
-          if (!suggestedKeys.includes(value)) {
-            storage.set('suggested_keys', [...suggestedKeys, value]);
-          }
+        if (!data) {
+          throw new Error('Notification not found!');
+        } else if (data.accessKey !== key) {
+          throw new Error('Failed to find a notification with the correct access key!');
+        }
 
-          setNotification(data);
-        })
-        .catch(err => {
-          setNotification({});
-          console.error('Error encountered :(', err);
-        });
+        if (!suggestedKeys.includes(key)) {
+          storage.set('suggested_keys', [...suggestedKeys, key]);
+        }
+
+        const notification = {
+          ...data,
+          contact: data.contact && data.contact.slice(2),
+        };
+
+        setNotification(notification);
+        setRemoteNotification(notification);
+        setSearchError(undefined);
+      } catch (err) {
+        setNotification(undefined);
+        setRemoteNotification(undefined);
+        setSearchError(err);
+      } finally {
+        setSearchLoading(false);
+      }
     },
-    [notification, setNotification, suggestedKeys]
+    [setNotification, suggestedKeys, isSearchLoading]
   );
+  const onSave = useCallback(
+    async value => {
+      if (value !== notification || !isDirty || isSaving) {
+        return;
+      }
+
+      // create the update package by only including the relevant fields
+      const updates = [...Object.keys(notification), ...Object.keys(remoteNotification)]
+        .filter(key => notification[key] !== remoteNotification[key])
+        .reduce((obj, key) => {
+          obj[key] = notification[key] ?? null;
+          return obj;
+        }, {});
+      if (updates.contact) {
+        updates.contact = `+1${updates.contact}`;
+      }
+
+      setSaving(true);
+      try {
+        const data = await API.updateNotification(remoteNotification.accessKey, updates);
+
+        if (!data) {
+          throw new Error('New notification details not found!');
+        }
+
+        const notification = {
+          ...data,
+          contact: data.contact && data.contact.slice(2),
+        };
+
+        setNotification(notification);
+        setRemoteNotification(notification);
+        setSaveError(undefined);
+      } catch (err) {
+        setSaveError(err);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      notification,
+      isDirty,
+      isSaving,
+      remoteNotification,
+      setNotification,
+      setRemoteNotification,
+      setSaveError,
+      setSaving,
+    ]
+  );
+  const onPendingValueChange = useCallback((_opt, _idx, val) => setSearch(val || ''), [
+    setSearch,
+  ]);
+  const onComboBoxChange = useCallback(
+    (_e, opt, _idx, val) => onSearch(opt ? opt.key : val),
+    [onSearch]
+  );
+  const onSearchClick = useCallback(() => onSearch(search), [onSearch, search]);
+  const onReset = useCallback(() => {
+    setSearch('');
+    setNotification(undefined);
+    setRemoteNotification(undefined);
+    setSearchError(undefined);
+  }, [setSearch, setNotification, setSearchError]);
+  const onRevert = useCallback(() => {
+    setNotification(remoteNotification);
+  }, [remoteNotification, setNotification]);
+  const onClearSaveError = useCallback(() => {
+    setSaveError(undefined);
+  }, [setSaveError]);
 
   return (
     <Card header="Look up an existing notification">
@@ -58,15 +162,57 @@ const FindCard = () => {
 
       <Separator />
 
-      <ComboBox
-        label="Select or enter the access key for your notification:"
-        placeholder="Enter access key or select existing access key..."
-        onChange={onSearch}
-        selectedKey={notification.accessKey}
-        options={keyOptions}
-        allowFreeform
-        autoComplete="on"
+      <Stack horizontal verticalAlign="end" wrap={false} tokens={{ childrenGap: 12 }}>
+        <Stack.Item grow>
+          <ComboBox
+            label="Select or enter the access key for your notification:"
+            placeholder="Enter access key or select existing access key..."
+            onChange={onComboBoxChange}
+            onPendingValueChanged={onPendingValueChange}
+            selectedKey={notification && notification.accessKey}
+            options={keyOptions}
+            allowFreeform
+            autoComplete="on"
+            disabled={isSearchLoading}
+            buttonIconProps={{ iconName: 'FullHistory' }}
+          />
+        </Stack.Item>
+        <Stack.Item>
+          <PrimaryButton onClick={onSearchClick} disabled={isSearchLoading}>
+            Search
+          </PrimaryButton>
+        </Stack.Item>
+      </Stack>
+      <ProgressIndicator percentComplete={isSearchLoading ? undefined : 1} />
+
+      <Separator />
+
+      <EditNotification
+        value={notification || {}}
+        disabled={isSearchLoading || !!searchError || !notification}
+        onChange={setNotification}
+        onReset={onRevert}
+        onSave={onSave}
+        canSave={isDirty}
       />
+
+      <InfoModal
+        isOpen={!isSearchLoading && !!searchError}
+        title="Error encountered"
+        onClose={onReset}
+      >
+        {searchError && searchError.toString()}
+      </InfoModal>
+
+      <InfoModal
+        isOpen={!isSaving && !!saveError}
+        title="Failed to save notification"
+        onClose={onClearSaveError}
+      >
+        {saveError && saveError.toString()}
+      </InfoModal>
+
+      <LoadingModal isOpen={isSaving} message="Updating your notification..." />
     </Card>
   );
 };

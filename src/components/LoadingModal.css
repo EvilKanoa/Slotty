@@ -1,0 +1,9 @@
+.loading-modal-container {
+  display: flex;
+}
+
+.loading-modal-container .loading-modal-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}

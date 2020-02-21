@@ -7,6 +7,7 @@
   "author": "EvilKanoa <kanoa@kanoa.ca>",
   "license": "GPL-3.0-only",
   "private": true,
+  "proxy": "http://localhost:3001",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",

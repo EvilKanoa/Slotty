@@ -9,48 +9,20 @@ import {
   Stack,
   TooltipHost,
   TooltipDelay,
-  Modal,
-  Spinner,
-  SpinnerSize,
 } from 'office-ui-fabric-react';
 
+import { schools, terms, defaultNotification } from '../constants';
 import API from '../api';
 import InfoModal from './InfoModal';
+import LoadingModal from './LoadingModal';
 import ConfirmDialog from './ConfirmDialog';
 import Card from './Card';
 
 import './AddCard.css';
 
-const schools = {
-  UOG: 'University of Guelph',
-  WLU: 'Wilfrid Laurier University',
-};
-const terms = {
-  W20: 'Winter 2020',
-  S20: 'Summer 2020',
-  F20: 'Fall 2020',
-  W21: 'Winter 2021',
-  S21: 'Summer 2021',
-  F21: 'Fall 2021',
-  W22: 'Winter 2022',
-  S22: 'Summer 2022',
-  F22: 'Fall 2022',
-  W23: 'Winter 2023',
-  S23: 'Summer 2023',
-  F23: 'Fall 2023',
-};
-
 const objToOptions = obj => Object.keys(obj).map(key => ({ key, text: obj[key] }));
 const schoolOptions = objToOptions(schools);
 const termOptions = objToOptions(terms);
-
-const defaultNotification = {
-  institutionKey: '',
-  termKey: '',
-  contact: '',
-  courseKey: '',
-  sectionKey: '',
-};
 
 const AddCard = () => {
   const confirmRef = useRef(null);
@@ -62,7 +34,12 @@ const AddCard = () => {
   const canSave = useMemo(() => {
     const { institutionKey, termKey, contact, courseKey } = notification;
     return (
-      schools[institutionKey] && terms[termKey] && contact.length && courseKey.length
+      schools[institutionKey] &&
+      terms[termKey] &&
+      contact &&
+      contact.length &&
+      courseKey &&
+      courseKey.length
     );
   }, [notification]);
 
@@ -85,25 +62,24 @@ const AddCard = () => {
   ]);
   const onSave = useCallback(async () => {
     if (await confirmRef.current.confirm()) {
-      setLoading(true);
-
       // transform the notification
       const notificationData = {
         ...notification,
         contact: `+1${notification.contact}`,
       };
 
+      setLoading(true);
       try {
         const data = await API.createNotification(notificationData);
         setResult({
-          title: 'Notification Created',
+          title: 'Notification created',
           message: `A new notification was successfully created. Please verify the contact method by responding to Slotty's message. Keep track of the following access key for the new notification: "${data.accessKey}"`,
           clearOnClose: true,
         });
       } catch (err) {
         console.error(err);
         setResult({
-          title: 'Error Encountered',
+          title: 'Error encountered',
           message: `Failed to create a new notification. Please try again or contact the site owner.`,
         });
       } finally {
@@ -217,14 +193,7 @@ const AddCard = () => {
         ref={confirmRef}
       />
 
-      <Modal
-        isOpen={isLoading}
-        isBlocking
-        containerClassName="add-notification-loading-modal-container"
-        scrollableContentClassName="add-notification-loading-modal-content"
-      >
-        <Spinner label="Creating a new notification..." size={SpinnerSize.large} />
-      </Modal>
+      <LoadingModal isOpen={isLoading} message="Creating a new notification..." />
 
       <InfoModal
         isOpen={!!result}

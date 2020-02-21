@@ -68,13 +68,13 @@ const config = {
   logFormat: 'common',
 
   /**
-   * Defines the port that slotty will bind its web and API server to by default.
+   * Defines the port that Slotty will bind its web and API server to by default.
    * If the environment variable "PORT" has been set, it will override this value.
    * @readonly
    * @constant
    * @type {Number}
    */
-  port: 3000,
+  port: 3001,
 
   /**
    * Defines the interval, in seconds, between each slot check that is performed.

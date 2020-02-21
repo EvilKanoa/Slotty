@@ -31,7 +31,9 @@ const InfoModal = ({
     </div>
     <div className="body">{children}</div>
     <div className="footer">
-      <DefaultButton onClick={onClose}>{closeText}</DefaultButton>
+      <DefaultButton onClick={onClose} autoFocus={true}>
+        {closeText}
+      </DefaultButton>
     </div>
   </Modal>
 );
