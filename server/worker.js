@@ -163,10 +163,6 @@ class Worker {
         });
         return 0;
       } else if (!notification.enabled || !notification.verified) {
-        console.log(
-          'Unable to perform single check since notification is not enabled and/or not verified',
-          { notification, data }
-        );
         return 0;
       }
 

@@ -20,9 +20,13 @@ export class Storage {
    * @param {String} [prefix='i_should_set_this'] The prefix to use when creating keys for this data store. Set it to something descriptive.
    * @param {Object} [engine=localStorage] If an engine other than localStorage is wanted, you should pass it here.
    */
-  constructor(prefix = 'i_should_set_this', engine = localStorage) {
+  constructor(prefix = 'i_should_set_this', engine) {
     this.prefix = prefix;
-    this.engine = engine;
+    try {
+      this.engine = engine || localStorage;
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   /**
@@ -76,14 +80,14 @@ export class Storage {
    * @returns {*} The saved value, or, if an error occurs or the value doesn't exist, undefined.
    */
   get = (key, fallback) => {
-    if (!key) return undefined;
+    if (!key) return fallback;
 
     try {
       const value = this.deserialize(this.engine.getItem(this.makeKey(key)));
       return value === null ? fallback : value; // localStorage returns null not undefined on missing values
     } catch (err) {
       console.error(err);
-      return undefined;
+      return fallback;
     }
   };
 }

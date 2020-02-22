@@ -38,7 +38,6 @@ export class API {
   }
 
   async updateNotification(accessKey, updates) {
-    console.log({ updates });
     return this.apiFetch(`notifications/${accessKey}`, {
       method: 'put',
       body: JSON.stringify(updates || {}),

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Text,
   Separator,
@@ -24,17 +24,48 @@ const FindCard = () => {
   const [notification, setNotification] = useState();
   const [remoteNotification, setRemoteNotification] = useState();
   const [search, setSearch] = useState('');
-
-  const suggestedKeys = storage.get('suggested_keys', []);
-  const keyOptions = useMemo(() => suggestedKeys.map(key => ({ key, text: key })), [
-    suggestedKeys,
-  ]);
+  const [suggestedKeys, setSuggestedKeys] = useState(storage.get('suggested_keys', []));
+  const [keyOptions, setKeyOptions] = useState(
+    suggestedKeys.map(key => ({ key, text: key }))
+  );
 
   const isDirty = useMemo(
     () =>
       notification && remoteNotification && !isEqual(notification, remoteNotification),
     [notification, remoteNotification]
   );
+
+  const refreshSuggestions = useCallback(() => setSuggestedKeys([...suggestedKeys]), [
+    suggestedKeys,
+    setSuggestedKeys,
+  ]);
+
+  useEffect(() => {
+    Promise.all(
+      suggestedKeys.map(async key => ({
+        key,
+        text: await API.getNotification(key)
+          .then(data =>
+            data
+              ? `${key} - ${data.courseKey}/${data.sectionKey || '-'} (${
+                  data.institutionKey
+                } - ${data.termKey})`
+              : key
+          )
+          .catch(err => {
+            console.warn(
+              `Error encountered while retrieving suggested notification (${key}):`,
+              err
+            );
+            return Promise.resolve(key);
+          }),
+      }))
+    ).then(options => {
+      if (options && options.length === suggestedKeys.length) {
+        setKeyOptions(options);
+      }
+    });
+  }, [suggestedKeys]);
 
   const onSearch = useCallback(
     async key => {
@@ -53,7 +84,9 @@ const FindCard = () => {
         }
 
         if (!suggestedKeys.includes(key)) {
-          storage.set('suggested_keys', [...suggestedKeys, key]);
+          const newSuggestedKeys = [...suggestedKeys, key];
+          setSuggestedKeys(newSuggestedKeys);
+          storage.set('suggested_keys', newSuggestedKeys);
         }
 
         const notification = {
@@ -111,6 +144,7 @@ const FindCard = () => {
         setSaveError(err);
       } finally {
         setSaving(false);
+        refreshSuggestions();
       }
     },
     [
@@ -122,6 +156,7 @@ const FindCard = () => {
       setRemoteNotification,
       setSaveError,
       setSaving,
+      refreshSuggestions,
     ]
   );
   const onPendingValueChange = useCallback((_opt, _idx, val) => setSearch(val || ''), [
@@ -165,16 +200,21 @@ const FindCard = () => {
       <Stack horizontal verticalAlign="end" wrap={false} tokens={{ childrenGap: 12 }}>
         <Stack.Item grow>
           <ComboBox
+            options={keyOptions}
             label="Select or enter the access key for your notification:"
             placeholder="Enter access key or select existing access key..."
             onChange={onComboBoxChange}
             onPendingValueChanged={onPendingValueChange}
             selectedKey={notification && notification.accessKey}
-            options={keyOptions}
             allowFreeform
             autoComplete="on"
             disabled={isSearchLoading}
             buttonIconProps={{ iconName: 'FullHistory' }}
+            comboBoxOptionStyles={{
+              optionText: { fontFamily: '"Lucida Console", Monaco, monospace' },
+            }}
+            useComboBoxAsMenuWidth
+            openOnKeyboardFocus
           />
         </Stack.Item>
         <Stack.Item>

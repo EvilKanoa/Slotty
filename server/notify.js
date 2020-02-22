@@ -214,6 +214,8 @@ class Notifier {
       throw new Error('Message is not of the correct type, see documentation');
     }
 
+    console.log('Sending message...', { type, destination, subject, body });
+
     // actually send the message depending on the type
     switch (type) {
       case this.CONTACT_TYPE.TEXT:
