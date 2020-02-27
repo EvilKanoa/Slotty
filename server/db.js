@@ -624,6 +624,28 @@ class DB {
       return data.rows.map(toActiveNotification);
     }
   }
+
+  /**
+   * Deletes all runs that occured before the specified date that are not the listed as the last run for any existing notification.
+   * @param {Date} deleteBeforeDate The date to use to determine whether a run should be deleted.
+   * @returns {Promise<undefined>} Promise which resolves when the past runs are deleted successfully.
+   */
+  async deletePastRuns(deleteBeforeDate = Date.now()) {
+    if (!deleteBeforeDate) {
+      throw new Error('The deleteBeforeDate must be a valid date.');
+    }
+
+    return this.pool.query(sql`
+      DELETE FROM runs
+      WHERE
+        runs.timestamp <= ${utils.toUnixEpoch(deleteBeforeDate)}
+        AND runs.run_id NOT IN (
+          SELECT notifications.last_run_id
+          FROM notifications
+          WHERE notifications.last_run_id is NOT NULL
+        )
+    `);
+  }
 }
 
 // export a single instance of a DB abstraction layer

@@ -328,14 +328,27 @@ class Worker {
       })
       .value();
 
-    // return the combined requests and again compute the count of successes overall
-    return Promise.allSettled(requests)
+    // run the combined requests and again compute the count of successes overall
+    const count = await Promise.allSettled(requests)
       .then(results =>
         _(results)
           .map(({ value }) => value || 0)
           .sum()
       )
       .then(sent => ({ total: notifications.length, sent }));
+
+    // clean up old runs to prevent the database getting massive
+    try {
+      await db.deletePastRuns();
+    } catch (err) {
+      console.error(
+        'Encountered error while cleaning up past runs, this may effect DB limits',
+        err
+      );
+    }
+
+    // return the resultent count
+    return count;
   }
 
   /**
