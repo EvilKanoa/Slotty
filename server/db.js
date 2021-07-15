@@ -265,7 +265,7 @@ class DB {
     }
 
     // create a new pg pool to use for connections
-    this.pool = new Pool({ connectionString: this.connectionString, ssl: true });
+    this.pool = new Pool({ connectionString: this.connectionString, ssl: { rejectUnauthorized: false } });
 
     // initialize the database with the correct tables
     await this.initialize();

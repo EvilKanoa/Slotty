@@ -18,7 +18,8 @@ const cleanupHandler = () => {
   process.exit(0);
 };
 process.on('cleanup', cleanupHandler);
-process.on('SIGINT', () => cleanupHandler);
+process.on('exit', () => process.emit('cleanup'));
+process.on('SIGINT', () => process.exit(2));
 
 (async () => {
   // create a new express app

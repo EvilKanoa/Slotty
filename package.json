@@ -22,7 +22,7 @@
     "heroku-postbuild": "yarn build"
   },
   "engines": {
-    "node": ">=12",
+    "node": ">=14",
     "yarn": ">=1.21"
   },
   "prettier": {
@@ -56,7 +56,7 @@
     "morgan": "^1.9.1",
     "nodemon": "^2.0.2",
     "office-ui-fabric-react": "^7.90.0",
-    "pg": "^7.18.1",
+    "pg": "^8.6.0",
     "prop-types": "^15.7.2",
     "react": "^16.12.0",
     "react-dom": "^16.12.0",
