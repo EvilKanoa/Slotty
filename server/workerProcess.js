@@ -18,8 +18,7 @@ const cleanupHandler = () => {
   process.exit(0);
 };
 process.on('cleanup', cleanupHandler);
-process.on('exit', () => process.emit('cleanup'));
-process.on('SIGINT', () => process.exit(2));
+process.on('SIGINT', () => cleanupHandler);
 
 (async () => {
   console.log('Starting a Slotty worker process...');
